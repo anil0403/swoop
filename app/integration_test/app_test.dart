@@ -21,12 +21,20 @@ String? setting(String key) {
   return defined.isNotEmpty ? defined : Platform.environment[key];
 }
 
-Future<void> waitFor(WidgetTester tester, Finder f, {int secs = 30}) async {
+/// Pumps until `f` shows up; on timeout fails with `why()` (e.g. the transfers' results).
+Future<void> waitFor(
+  WidgetTester tester,
+  Finder f, {
+  int secs = 30,
+  List<Transfer> Function()? why,
+}) async {
   for (var i = 0; i < secs * 10; i++) {
     await tester.pump(const Duration(milliseconds: 100));
     if (f.evaluate().isNotEmpty) return;
   }
-  fail('timed out waiting for $f');
+  fail(
+    'timed out waiting for $f${why == null ? '' : ': ${why().map((t) => '${t.title}: ${t.result ?? '${t.done}/${t.total} bytes'}')}'}',
+  );
 }
 
 void main() {
@@ -60,12 +68,12 @@ void main() {
       );
     }
     home.send(p, [Pick(path: file)]);
-    await waitFor(tester, find.textContaining('Sent '), secs: 120);
+    await waitFor(tester, find.textContaining('Sent '), secs: 120, why: () => home.transfers);
 
     // The peer sends back: offer dialog with the code, accept it.
     await waitFor(tester, find.text('Accept'), secs: 120);
     expect(find.text(p.code), findsWidgets);
     await tester.tap(find.text('Accept'));
-    await waitFor(tester, find.textContaining('Received '), secs: 120);
+    await waitFor(tester, find.textContaining('Received '), secs: 120, why: () => home.transfers);
   });
 }
