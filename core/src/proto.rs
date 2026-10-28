@@ -62,20 +62,45 @@ pub struct FileEntry {
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum Msg {
-    Hello { version: u32, session: u64, role: Role, caps: Caps, name: String },
-    Welcome { version: u32, caps: Caps, name: String },
-    Offer { chunk_size: u64, files: Vec<FileEntry> },
-    Accept { have: Vec<Vec<u64>> },
-    Reject { reason: String },
-    Progress { done: u64 },
+    Hello {
+        version: u32,
+        session: u64,
+        role: Role,
+        caps: Caps,
+        name: String,
+    },
+    Welcome {
+        version: u32,
+        caps: Caps,
+        name: String,
+    },
+    Offer {
+        chunk_size: u64,
+        files: Vec<FileEntry>,
+    },
+    Accept {
+        have: Vec<Vec<u64>>,
+    },
+    Reject {
+        reason: String,
+    },
+    Progress {
+        done: u64,
+    },
     Done,
-    Error { message: String },
+    Error {
+        message: String,
+    },
 }
 
 pub enum Frame {
     Msg(Msg),
     /// Payload is left in the caller's buffer.
-    Chunk { file: u32, index: u64, hash: [u8; 32] },
+    Chunk {
+        file: u32,
+        index: u64,
+        hash: [u8; 32],
+    },
 }
 
 pub fn chunk_count(size: u64, chunk_size: u64) -> u64 {
@@ -157,7 +182,12 @@ pub fn bad(msg: &str) -> io::Error {
 /// Random session id without a rand dependency (RandomState is randomly seeded).
 pub fn random_u64() -> u64 {
     let mut h = std::collections::hash_map::RandomState::new().build_hasher();
-    h.write_u128(std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos());
+    h.write_u128(
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos(),
+    );
     h.finish()
 }
 
@@ -170,7 +200,11 @@ mod tests {
     fn roundtrip() {
         let msg = Msg::Offer {
             chunk_size: CHUNK_SIZE,
-            files: vec![FileEntry { path: "a/b.txt".into(), size: 5, mtime: 1 }],
+            files: vec![FileEntry {
+                path: "a/b.txt".into(),
+                size: 5,
+                mtime: 1,
+            }],
         };
         let mut wire = Vec::new();
         write_msg(&mut wire, &msg).unwrap();

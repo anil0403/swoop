@@ -12,9 +12,9 @@ use std::io::{self, BufWriter, Write};
 use std::net::{Shutdown, SocketAddr, TcpStream};
 use std::os::unix::fs::{FileExt, MetadataExt};
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::mpsc::{self, Receiver, SyncSender};
-use std::sync::Arc;
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -70,17 +70,33 @@ pub fn send(
     let cfg = tls::client_config(id, server_fp)?;
     let session = proto::random_u64();
     let caps = tls::caps();
-    let hello = |role| Msg::Hello { version: VERSION, session, role, caps: caps.clone(), name: opts.name.clone() };
+    let hello = |role| Msg::Hello {
+        version: VERSION,
+        session,
+        role,
+        caps: caps.clone(),
+        name: opts.name.clone(),
+    };
 
     let mut ctrl = tls::connect(addr, cfg.clone())?;
     proto::write_msg(&mut ctrl, &hello(Role::Control))?;
     ctrl.flush()?;
     match proto::read_msg(&mut ctrl)? {
-        Msg::Welcome { version: VERSION, .. } => {}
-        Msg::Welcome { version, .. } => return Err(bad(&format!("receiver speaks protocol {version}"))),
+        Msg::Welcome {
+            version: VERSION, ..
+        } => {}
+        Msg::Welcome { version, .. } => {
+            return Err(bad(&format!("receiver speaks protocol {version}")));
+        }
         m => return Err(refused(m)),
     }
-    proto::write_msg(&mut ctrl, &Msg::Offer { chunk_size: CHUNK_SIZE, files: files.clone() })?;
+    proto::write_msg(
+        &mut ctrl,
+        &Msg::Offer {
+            chunk_size: CHUNK_SIZE,
+            files: files.clone(),
+        },
+    )?;
     ctrl.flush()?;
     let have = match proto::read_msg(&mut ctrl)? {
         Msg::Accept { have } => have,
@@ -125,8 +141,14 @@ pub fn send(
                         shown = Some(now);
                     }
                     if probing && now - win_start >= WINDOW {
-                        let rate = done.saturating_sub(win_done) as f64 / (now - win_start).as_secs_f64();
-                        if should_add(handles.len() as u32, rate, rate_at_add, total.saturating_sub(done)) {
+                        let rate =
+                            done.saturating_sub(win_done) as f64 / (now - win_start).as_secs_f64();
+                        if should_add(
+                            handles.len() as u32,
+                            rate,
+                            rate_at_add,
+                            total.saturating_sub(done),
+                        ) {
                             rate_at_add = Some(rate);
                             handles.push(s.spawn(|| stream(&job)));
                         } else {
@@ -146,7 +168,10 @@ pub fn send(
         let streams = handles.len() as u32;
         let mut stream_err = None;
         for h in handles {
-            if let Err(e) = h.join().unwrap_or_else(|_| Err(io::Error::other("stream panicked"))) {
+            if let Err(e) = h
+                .join()
+                .unwrap_or_else(|_| Err(io::Error::other("stream panicked")))
+            {
                 stream_err.get_or_insert(e);
             }
         }
@@ -159,7 +184,14 @@ pub fn send(
         on_progress(&snap, streams);
         let secs = start.elapsed().as_secs_f64();
         let bytes = total - resumed;
-        Ok(SendStats { bytes, resumed, secs, avg: bytes as f64 / secs, peak: snap.peak, streams })
+        Ok(SendStats {
+            bytes,
+            resumed,
+            secs,
+            avg: bytes as f64 / secs,
+            peak: snap.peak,
+            streams,
+        })
     })
 }
 
@@ -214,7 +246,9 @@ fn run_stream(job: &Job) -> io::Result<()> {
     let (tx, rx) = mpsc::sync_channel::<Chunk>(2);
     let (pool_tx, pool_rx) = mpsc::channel();
     for _ in 0..3 {
-        pool_tx.send(Vec::with_capacity(CHUNK_SIZE as usize)).unwrap();
+        pool_tx
+            .send(Vec::with_capacity(CHUNK_SIZE as usize))
+            .unwrap();
     }
     thread::scope(|s| {
         let reader = s.spawn(|| read_chunks(job, tx, pool_rx));
@@ -228,7 +262,9 @@ fn run_stream(job: &Job) -> io::Result<()> {
             w.get_mut().conn.send_close_notify();
             w.flush()
         })();
-        reader.join().unwrap_or_else(|_| Err(io::Error::other("reader panicked")))?;
+        reader
+            .join()
+            .unwrap_or_else(|_| Err(io::Error::other("reader panicked")))?;
         wrote
     })
 }
@@ -257,7 +293,10 @@ fn read_chunks(job: &Job, tx: SyncSender<Chunk>, pool: Receiver<Vec<u8>>) -> io:
                 }
                 // Same length as last time for all but a file's final chunk, so no zero-fill.
                 buf.resize(len, 0);
-                open.as_ref().unwrap().1.read_exact_at(&mut buf, index * CHUNK_SIZE)?;
+                open.as_ref()
+                    .unwrap()
+                    .1
+                    .read_exact_at(&mut buf, index * CHUNK_SIZE)?;
             }
         }
         let hash = *blake3::hash(&buf).as_bytes();
@@ -279,13 +318,20 @@ fn collect(sources: &[Source]) -> io::Result<Vec<Item>> {
     for s in sources {
         match s {
             Source::Synthetic { name, size } => out.push(Item {
-                entry: FileEntry { path: name.clone(), size: *size, mtime: 0 },
+                entry: FileEntry {
+                    path: name.clone(),
+                    size: *size,
+                    mtime: 0,
+                },
                 src: None,
             }),
             Source::Path(p) => {
                 let name = match p.file_name() {
                     Some(n) => n.to_owned(),
-                    None => fs::canonicalize(p)?.file_name().ok_or_else(|| bad("path has no name"))?.to_owned(),
+                    None => fs::canonicalize(p)?
+                        .file_name()
+                        .ok_or_else(|| bad("path has no name"))?
+                        .to_owned(),
                 };
                 let mut found = Vec::new();
                 walk(p, utf8(&name)?, &fs::metadata(p)?, &mut found)?;
@@ -311,7 +357,11 @@ fn walk(path: &Path, rel: String, md: &fs::Metadata, out: &mut Vec<Item>) -> io:
         }
     } else if md.is_file() {
         out.push(Item {
-            entry: FileEntry { path: rel, size: md.len(), mtime: md.mtime() },
+            entry: FileEntry {
+                path: rel,
+                size: md.len(),
+                mtime: md.mtime(),
+            },
             src: Some(path.to_owned()),
         });
     }
@@ -319,7 +369,9 @@ fn walk(path: &Path, rel: String, md: &fs::Metadata, out: &mut Vec<Item>) -> io:
 }
 
 fn utf8(s: &OsStr) -> io::Result<String> {
-    s.to_str().map(str::to_owned).ok_or_else(|| bad(&format!("non-UTF-8 name {}", s.to_string_lossy())))
+    s.to_str()
+        .map(str::to_owned)
+        .ok_or_else(|| bad(&format!("non-UTF-8 name {}", s.to_string_lossy())))
 }
 
 fn chunk_len(size: u64, index: u64) -> u64 {
@@ -330,7 +382,10 @@ fn chunk_len(size: u64, index: u64) -> u64 {
 fn plan(files: &[FileEntry], have: &[Vec<u64>]) -> (Vec<(u32, u64)>, u64) {
     let (mut work, mut resumed) = (Vec::new(), 0);
     for (i, f) in files.iter().enumerate() {
-        let have: HashSet<u64> = have.get(i).map(|h| h.iter().copied().collect()).unwrap_or_default();
+        let have: HashSet<u64> = have
+            .get(i)
+            .map(|h| h.iter().copied().collect())
+            .unwrap_or_default();
         for c in 0..chunk_count(f.size, CHUNK_SIZE) {
             if have.contains(&c) {
                 resumed += chunk_len(f.size, c);
@@ -359,12 +414,27 @@ mod tests {
 
         let items = collect(&[
             Source::Path(d.clone()),
-            Source::Synthetic { name: "mem".into(), size: 9 },
+            Source::Synthetic {
+                name: "mem".into(),
+                size: 9,
+            },
             Source::Path(root.join("single")),
         ])
         .unwrap();
-        let got: Vec<_> = items.iter().map(|i| (i.entry.path.as_str(), i.entry.size)).collect();
-        assert_eq!(got, [("d/a.txt", 0), ("d/b.txt", 2), ("d/sub/c", 3), ("mem", 9), ("single", 1)]);
+        let got: Vec<_> = items
+            .iter()
+            .map(|i| (i.entry.path.as_str(), i.entry.size))
+            .collect();
+        assert_eq!(
+            got,
+            [
+                ("d/a.txt", 0),
+                ("d/b.txt", 2),
+                ("d/sub/c", 3),
+                ("mem", 9),
+                ("single", 1)
+            ]
+        );
         assert!(items[0].entry.mtime > 0);
         assert_eq!((items[3].entry.mtime, items[3].src.is_none()), (0, true));
         fs::remove_dir_all(root).unwrap();
@@ -372,7 +442,11 @@ mod tests {
 
     #[test]
     fn plans_work_around_have() {
-        let f = |size| FileEntry { path: String::new(), size, mtime: 0 };
+        let f = |size| FileEntry {
+            path: String::new(),
+            size,
+            mtime: 0,
+        };
         let files = [f(2 * CHUNK_SIZE + 5), f(0), f(CHUNK_SIZE)];
         assert_eq!(chunk_len(files[0].size, 2), 5);
         assert_eq!(chunk_len(files[2].size, 0), CHUNK_SIZE);
@@ -400,7 +474,13 @@ mod tests {
         let data: Vec<u8> = (0..CHUNK_SIZE + 10).map(|i| (i % 251) as u8).collect();
         fs::write(&path, &data).unwrap();
         let mut items = collect(&[Source::Path(path.clone())]).unwrap();
-        items.extend(collect(&[Source::Synthetic { name: "m".into(), size: 7 }]).unwrap());
+        items.extend(
+            collect(&[Source::Synthetic {
+                name: "m".into(),
+                size: 7,
+            }])
+            .unwrap(),
+        );
         let files: Vec<_> = items.iter().map(|i| i.entry.clone()).collect();
         let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
         let job = Job {
@@ -410,7 +490,9 @@ mod tests {
             abort: AtomicBool::new(false),
             ctrl: TcpStream::connect(listener.local_addr().unwrap()).unwrap(),
             cfg: Arc::new(
-                ClientConfig::builder().with_root_certificates(rustls::RootCertStore::empty()).with_no_client_auth(),
+                ClientConfig::builder()
+                    .with_root_certificates(rustls::RootCertStore::empty())
+                    .with_no_client_auth(),
             ),
             addr: listener.local_addr().unwrap(),
             hello: Msg::Done,
@@ -419,7 +501,9 @@ mod tests {
         let (tx, rx) = mpsc::sync_channel(2);
         let (pool_tx, pool_rx) = mpsc::channel();
         for _ in 0..3 {
-            pool_tx.send(Vec::with_capacity(CHUNK_SIZE as usize)).unwrap();
+            pool_tx
+                .send(Vec::with_capacity(CHUNK_SIZE as usize))
+                .unwrap();
         }
         let got = thread::scope(|s| {
             let r = s.spawn(|| read_chunks(&job, tx, pool_rx));
@@ -438,7 +522,10 @@ mod tests {
         fs::remove_file(path).unwrap();
         assert_eq!(got.len(), 3);
         assert_eq!(got[0].2, data[..CHUNK_SIZE as usize]);
-        assert_eq!((got[1].0, got[1].1, &got[1].2[..]), (0, 1, &data[CHUNK_SIZE as usize..]));
+        assert_eq!(
+            (got[1].0, got[1].1, &got[1].2[..]),
+            (0, 1, &data[CHUNK_SIZE as usize..])
+        );
         assert_eq!((got[2].0, got[2].2.len()), (1, 7));
         assert!(got[2].2.iter().all(|&b| b != 0));
     }

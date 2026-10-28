@@ -28,10 +28,28 @@ pub struct RecvOptions {
 
 #[derive(Debug, Clone)]
 pub enum RecvEvent {
-    Started { session: u64, peer_fp: String, peer_name: String, files: usize, total: u64, resumed: u64 },
-    Progress { session: u64, done: u64, total: u64 },
-    Done { session: u64, bytes: u64, secs: f64 },
-    Failed { session: u64, error: String },
+    Started {
+        session: u64,
+        peer_fp: String,
+        peer_name: String,
+        files: usize,
+        total: u64,
+        resumed: u64,
+    },
+    Progress {
+        session: u64,
+        done: u64,
+        total: u64,
+    },
+    Done {
+        session: u64,
+        bytes: u64,
+        secs: f64,
+    },
+    Failed {
+        session: u64,
+        error: String,
+    },
 }
 
 const MIN_CHUNK: u64 = 64 << 10;
@@ -78,7 +96,11 @@ struct Ctx {
 }
 
 impl Ctx {
-    fn new(opts: RecvOptions, caps: Caps, on_event: impl Fn(RecvEvent) + Send + Sync + 'static) -> Ctx {
+    fn new(
+        opts: RecvOptions,
+        caps: Caps,
+        on_event: impl Fn(RecvEvent) + Send + Sync + 'static,
+    ) -> Ctx {
         Ctx {
             dir: opts.dir,
             null_sink: opts.null_sink,
@@ -116,7 +138,14 @@ fn send<W: Write>(w: &mut W, msg: &Msg) -> io::Result<()> {
 }
 
 fn handle<S: Read + Write>(mut s: S, peer_fp: String, ctx: &Ctx) -> io::Result<()> {
-    let Msg::Hello { version, session, role, name, .. } = proto::read_msg(&mut s)? else {
+    let Msg::Hello {
+        version,
+        session,
+        role,
+        name,
+        ..
+    } = proto::read_msg(&mut s)?
+    else {
         return Err(bad("expected hello"));
     };
     if version != VERSION {
@@ -196,9 +225,19 @@ impl Session {
         (self.files[file].size - index * self.chunk_size).min(self.chunk_size)
     }
 
-    fn put(&self, file: u32, index: u64, hash: &[u8; 32], data: &[u8], cache: &mut Option<(u32, File)>) -> io::Result<()> {
+    fn put(
+        &self,
+        file: u32,
+        index: u64,
+        hash: &[u8; 32],
+        data: &[u8],
+        cache: &mut Option<(u32, File)>,
+    ) -> io::Result<()> {
         let fi = file as usize;
-        let t = self.files.get(fi).ok_or_else(|| bad("chunk for unknown file"))?;
+        let t = self
+            .files
+            .get(fi)
+            .ok_or_else(|| bad("chunk for unknown file"))?;
         if index >= chunk_count(t.size, self.chunk_size) {
             return Err(bad("chunk index out of range"));
         }
@@ -215,7 +254,11 @@ impl Session {
             if cache.as_ref().is_none_or(|(f, _)| *f != file) {
                 *cache = Some((file, open_part(t)?));
             }
-            cache.as_ref().unwrap().1.write_all_at(data, index * self.chunk_size)?;
+            cache
+                .as_ref()
+                .unwrap()
+                .1
+                .write_all_at(data, index * self.chunk_size)?;
         }
         let last = {
             let mut st = self.st.lock().unwrap();
@@ -252,7 +295,14 @@ impl Session {
             for i in 0..self.files.len() {
                 if st.dirty[i] && st.left[i] > 0 {
                     st.dirty[i] = false;
-                    snap.push((i, (0..).zip(&st.done[i]).filter(|(_, d)| **d).map(|(n, _)| n).collect()));
+                    snap.push((
+                        i,
+                        (0..)
+                            .zip(&st.done[i])
+                            .filter(|(_, d)| **d)
+                            .map(|(n, _)| n)
+                            .collect(),
+                    ));
                 }
             }
             snap
@@ -263,7 +313,12 @@ impl Session {
         syncfs(&self.dir)?;
         for (i, done) in &snap {
             let t = &self.files[*i];
-            let ps = PartState { size: t.size, mtime: t.mtime, chunk_size: self.chunk_size, done: done.clone() };
+            let ps = PartState {
+                size: t.size,
+                mtime: t.mtime,
+                chunk_size: self.chunk_size,
+                done: done.clone(),
+            };
             fs::write(t.state_path(), serde_json::to_vec(&ps)?)?;
         }
         // A file finalized meanwhile must not keep the state we just wrote.
@@ -285,7 +340,11 @@ fn open_part(t: &Target) -> io::Result<File> {
     if let Some(p) = t.part.parent() {
         fs::create_dir_all(p)?;
     }
-    let f = OpenOptions::new().write(true).create(true).truncate(false).open(&t.part)?;
+    let f = OpenOptions::new()
+        .write(true)
+        .create(true)
+        .truncate(false)
+        .open(&t.part)?;
     if f.metadata()?.len() < t.size {
         use rustix::io::Errno;
         match rustix::fs::fallocate(&f, rustix::fs::FallocateFlags::empty(), 0, t.size) {
@@ -302,7 +361,11 @@ fn finalize(t: &Target) -> io::Result<()> {
     if let Some(p) = t.part.parent() {
         fs::create_dir_all(p)?;
     }
-    let f = OpenOptions::new().write(true).create(true).truncate(false).open(&t.part)?;
+    let f = OpenOptions::new()
+        .write(true)
+        .create(true)
+        .truncate(false)
+        .open(&t.part)?;
     if f.metadata()?.len() != t.size {
         f.set_len(t.size)?;
     }
@@ -337,7 +400,11 @@ fn numbered(path: &Path, n: u32) -> PathBuf {
 
 fn system_time(secs: i64) -> Option<SystemTime> {
     let d = Duration::from_secs(secs.unsigned_abs());
-    if secs >= 0 { UNIX_EPOCH.checked_add(d) } else { UNIX_EPOCH.checked_sub(d) }
+    if secs >= 0 {
+        UNIX_EPOCH.checked_add(d)
+    } else {
+        UNIX_EPOCH.checked_sub(d)
+    }
 }
 
 fn unix_secs(t: SystemTime) -> i64 {
@@ -354,13 +421,19 @@ fn resume(t: &Target, chunk_size: u64) -> (bool, Vec<u64>) {
     if let Ok(m) = fs::metadata(&t.dest)
         && m.is_file()
         && m.len() == t.size
-        && m.modified().is_ok_and(|mt| unix_secs(mt).abs_diff(t.mtime) <= 2)
+        && m.modified()
+            .is_ok_and(|mt| unix_secs(mt).abs_diff(t.mtime) <= 2)
     {
         return (true, (0..n).collect());
     }
-    let Ok(raw) = fs::read(t.state_path()) else { return (false, Vec::new()) };
+    let Ok(raw) = fs::read(t.state_path()) else {
+        return (false, Vec::new());
+    };
     match serde_json::from_slice::<PartState>(&raw) {
-        Ok(ps) if t.part.is_file() && (ps.size, ps.mtime, ps.chunk_size) == (t.size, t.mtime, chunk_size) => {
+        Ok(ps)
+            if t.part.is_file()
+                && (ps.size, ps.mtime, ps.chunk_size) == (t.size, t.mtime, chunk_size) =>
+        {
             let mut done: Vec<u64> = ps.done.into_iter().filter(|&i| i < n).collect();
             done.sort_unstable();
             done.dedup();
@@ -374,12 +447,7 @@ type Plan = (Session, Vec<Vec<u64>>, Vec<usize>);
 
 /// Validates an offer and builds the session plus `Accept.have` and the files that
 /// need finalizing without any chunk. Err(reason) means Reject.
-fn plan(
-    ctx: &Ctx,
-    peer_fp: String,
-    chunk_size: u64,
-    files: &[FileEntry],
-) -> Result<Plan, String> {
+fn plan(ctx: &Ctx, peer_fp: String, chunk_size: u64, files: &[FileEntry]) -> Result<Plan, String> {
     if !(MIN_CHUNK..=proto::MAX_CHUNK).contains(&chunk_size) {
         return Err(format!("chunk size {chunk_size} out of range"));
     }
@@ -401,7 +469,12 @@ fn plan(
         let dest = ctx.dir.join(&rel);
         let mut part = dest.clone().into_os_string();
         part.push(".uftpart");
-        targets.push(Target { dest, part: part.into(), size: f.size, mtime: f.mtime });
+        targets.push(Target {
+            dest,
+            part: part.into(),
+            size: f.size,
+            mtime: f.mtime,
+        });
     }
     let mut st = State {
         done: Vec::new(),
@@ -413,7 +486,11 @@ fn plan(
     let (mut have, mut now) = (Vec::new(), Vec::new());
     for (i, t) in targets.iter().enumerate() {
         let n = chunk_count(t.size, chunk_size);
-        let (complete, h) = if ctx.null_sink { (false, Vec::new()) } else { resume(t, chunk_size) };
+        let (complete, h) = if ctx.null_sink {
+            (false, Vec::new())
+        } else {
+            resume(t, chunk_size)
+        };
         let mut done = vec![false; n as usize];
         for &c in &h {
             done[c as usize] = true;
@@ -440,8 +517,18 @@ fn plan(
     Ok((sess, have, now))
 }
 
-fn control<S: Read + Write>(mut s: S, ctx: &Ctx, id: u64, peer_fp: String, peer_name: String) -> io::Result<()> {
-    let welcome = Msg::Welcome { version: VERSION, caps: ctx.caps.clone(), name: ctx.name.clone() };
+fn control<S: Read + Write>(
+    mut s: S,
+    ctx: &Ctx,
+    id: u64,
+    peer_fp: String,
+    peer_name: String,
+) -> io::Result<()> {
+    let welcome = Msg::Welcome {
+        version: VERSION,
+        caps: ctx.caps.clone(),
+        name: ctx.name.clone(),
+    };
     send(&mut s, &welcome)?;
     let Msg::Offer { chunk_size, files } = proto::read_msg(&mut s)? else {
         return Err(bad("expected offer"));
@@ -451,20 +538,36 @@ fn control<S: Read + Write>(mut s: S, ctx: &Ctx, id: u64, peer_fp: String, peer_
         Err(reason) => return send(&mut s, &Msg::Reject { reason }),
     };
     let sess = Arc::new(sess);
-    let resumed: u64 = have.iter().enumerate().map(|(f, h)| h.iter().map(|&i| sess.chunk_len(f, i)).sum::<u64>()).sum();
+    let resumed: u64 = have
+        .iter()
+        .enumerate()
+        .map(|(f, h)| h.iter().map(|&i| sess.chunk_len(f, i)).sum::<u64>())
+        .sum();
     let total = files.iter().map(|f| f.size).fold(0u64, u64::saturating_add);
     {
         // Registered before Accept so the sender's data connections never race us.
         let mut reg = ctx.sessions.lock().unwrap();
         if reg.contains_key(&id) {
             drop(reg);
-            return send(&mut s, &Msg::Error { message: "session already active".into() });
+            return send(
+                &mut s,
+                &Msg::Error {
+                    message: "session already active".into(),
+                },
+            );
         }
         reg.insert(id, sess.clone());
     }
     let start = Instant::now();
     let r = send(&mut s, &Msg::Accept { have }).and_then(|()| {
-        (ctx.on_event)(RecvEvent::Started { session: id, peer_fp, peer_name, files: files.len(), total, resumed });
+        (ctx.on_event)(RecvEvent::Started {
+            session: id,
+            peer_fp,
+            peer_name,
+            files: files.len(),
+            total,
+            resumed,
+        });
         run(&mut s, ctx, id, &sess, now, resumed, total, start)
     });
     ctx.sessions.lock().unwrap().remove(&id);
@@ -472,7 +575,12 @@ fn control<S: Read + Write>(mut s: S, ctx: &Ctx, id: u64, peer_fp: String, peer_
         let error = e.to_string();
         sess.fail(error.clone());
         let _ = sess.persist();
-        let _ = send(&mut s, &Msg::Error { message: error.clone() });
+        let _ = send(
+            &mut s,
+            &Msg::Error {
+                message: error.clone(),
+            },
+        );
         (ctx.on_event)(RecvEvent::Failed { session: id, error });
     }
     r
@@ -506,14 +614,22 @@ fn run<S: Write>(
         }
         let done = resumed + sess.written.load(Ordering::Relaxed);
         send(s, &Msg::Progress { done })?;
-        (ctx.on_event)(RecvEvent::Progress { session: id, done, total });
+        (ctx.on_event)(RecvEvent::Progress {
+            session: id,
+            done,
+            total,
+        });
         if complete {
             if !sess.null_sink {
                 syncfs(&sess.dir)?;
             }
             send(s, &Msg::Done)?;
             let bytes = sess.written.load(Ordering::Relaxed);
-            (ctx.on_event)(RecvEvent::Done { session: id, bytes, secs: start.elapsed().as_secs_f64() });
+            (ctx.on_event)(RecvEvent::Done {
+                session: id,
+                bytes,
+                secs: start.elapsed().as_secs_f64(),
+            });
             return Ok(());
         }
         if persisted.elapsed() >= Duration::from_secs(2) {
@@ -532,7 +648,9 @@ fn data<S: Read>(s: S, sess: &Session) -> io::Result<()> {
     let (tx, rx) = sync_channel::<Job>(4);
     let (pool_tx, pool_rx) = channel();
     for _ in 0..POOL {
-        pool_tx.send(Vec::with_capacity(sess.chunk_size as usize)).unwrap();
+        pool_tx
+            .send(Vec::with_capacity(sess.chunk_size as usize))
+            .unwrap();
     }
     thread::scope(|sc| {
         let writer = sc.spawn(move || write_loop(sess, rx, pool_tx));
@@ -581,11 +699,19 @@ mod tests {
     }
 
     fn f(path: &'static str, len: usize) -> F {
-        F { path, data: (0..len).map(|i| (i * 31 + i / 997) as u8).collect(), mtime: 1_600_000_000 }
+        F {
+            path,
+            data: (0..len).map(|i| (i * 31 + i / 997) as u8).collect(),
+            mtime: 1_600_000_000,
+        }
     }
 
     fn caps() -> Caps {
-        Caps { aes: false, cores: 1, os: "test".into() }
+        Caps {
+            aes: false,
+            cores: 1,
+            os: "test".into(),
+        }
     }
 
     fn tmp(name: &str) -> PathBuf {
@@ -597,7 +723,11 @@ mod tests {
         let l = TcpListener::bind("127.0.0.1:0").unwrap();
         let addr = l.local_addr().unwrap();
         let (tx, rx) = channel();
-        let opts = RecvOptions { dir: dir.into(), null_sink, name: "rx".into() };
+        let opts = RecvOptions {
+            dir: dir.into(),
+            null_sink,
+            name: "rx".into(),
+        };
         let ctx = Arc::new(Ctx::new(opts, caps(), move |e| {
             let _ = tx.send(e);
         }));
@@ -608,16 +738,33 @@ mod tests {
     fn hello(addr: SocketAddr, session: u64, role: Role) -> TcpStream {
         let mut s = TcpStream::connect(addr).unwrap();
         s.set_read_timeout(Some(Duration::from_secs(10))).unwrap();
-        send(&mut s, &Msg::Hello { version: VERSION, session, role, caps: caps(), name: "tx".into() }).unwrap();
+        send(
+            &mut s,
+            &Msg::Hello {
+                version: VERSION,
+                session,
+                role,
+                caps: caps(),
+                name: "tx".into(),
+            },
+        )
+        .unwrap();
         s
     }
 
     fn offer(addr: SocketAddr, session: u64, chunk_size: u64, files: &[F]) -> (TcpStream, Msg) {
         let mut c = hello(addr, session, Role::Control);
-        assert!(matches!(proto::read_msg(&mut c).unwrap(), Msg::Welcome { .. }));
+        assert!(matches!(
+            proto::read_msg(&mut c).unwrap(),
+            Msg::Welcome { .. }
+        ));
         let files = files
             .iter()
-            .map(|f| FileEntry { path: f.path.into(), size: f.data.len() as u64, mtime: f.mtime })
+            .map(|f| FileEntry {
+                path: f.path.into(),
+                size: f.data.len() as u64,
+                mtime: f.mtime,
+            })
             .collect();
         send(&mut c, &Msg::Offer { chunk_size, files }).unwrap();
         let reply = proto::read_msg(&mut c).unwrap();
@@ -626,7 +773,14 @@ mod tests {
 
     /// Sends the chunks not in `have` in reverse order, alternating over two data
     /// connections (optionally corrupting one hash), and returns the final control message.
-    fn transfer(addr: SocketAddr, session: u64, mut c: TcpStream, files: &[F], have: &[Vec<u64>], corrupt: bool) -> Msg {
+    fn transfer(
+        addr: SocketAddr,
+        session: u64,
+        mut c: TcpStream,
+        files: &[F],
+        have: &[Vec<u64>],
+        corrupt: bool,
+    ) -> Msg {
         let mut jobs = Vec::new();
         for (fi, file) in files.iter().enumerate() {
             for (i, data) in file.data.chunks(CS as usize).enumerate() {
@@ -636,7 +790,9 @@ mod tests {
             }
         }
         jobs.reverse();
-        let mut conns: Vec<_> = (0..2).map(|_| BufWriter::new(hello(addr, session, Role::Data))).collect();
+        let mut conns: Vec<_> = (0..2)
+            .map(|_| BufWriter::new(hello(addr, session, Role::Data)))
+            .collect();
         for (n, (fi, i, data)) in jobs.into_iter().enumerate() {
             let mut h = *blake3::hash(data).as_bytes();
             if corrupt && n == 0 {
@@ -680,7 +836,11 @@ mod tests {
     fn transfers_files() {
         let dir = tmp("basic");
         let (addr, rx) = start(&dir, false);
-        let files = [f("empty.txt", 0), f("big.bin", 5 * CS as usize + 123), f("sub/deep/c.txt", 1000)];
+        let files = [
+            f("empty.txt", 0),
+            f("big.bin", 5 * CS as usize + 123),
+            f("sub/deep/c.txt", 1000),
+        ];
         let (c, reply) = offer(addr, 1, CS, &files);
         let have = accepted(reply);
         assert_eq!(have, vec![Vec::<u64>::new(); 3]);
@@ -692,7 +852,14 @@ mod tests {
         }
         assert!(!dir.join("big.bin.uftpart").exists());
         let ev = events(&rx);
-        assert!(matches!(ev[0], RecvEvent::Started { files: 3, resumed: 0, .. }));
+        assert!(matches!(
+            ev[0],
+            RecvEvent::Started {
+                files: 3,
+                resumed: 0,
+                ..
+            }
+        ));
         let total: u64 = files.iter().map(|f| f.data.len() as u64).sum();
         assert!(matches!(ev.last(), Some(RecvEvent::Done { bytes, .. }) if *bytes == total));
         fs::remove_dir_all(dir).unwrap();
@@ -705,7 +872,10 @@ mod tests {
         let files = [f("a.bin", 2 * CS as usize)];
         let (c, reply) = offer(addr, 2, CS, &files);
         let have = accepted(reply);
-        assert!(matches!(transfer(addr, 2, c, &files, &have, true), Msg::Error { .. }));
+        assert!(matches!(
+            transfer(addr, 2, c, &files, &have, true),
+            Msg::Error { .. }
+        ));
         assert!(matches!(events(&rx).last(), Some(RecvEvent::Failed { .. })));
         assert!(!dir.join("a.bin").exists());
         let _ = fs::remove_dir_all(dir);
@@ -715,9 +885,18 @@ mod tests {
     fn rejects_bad_offers() {
         let dir = tmp("reject");
         let (addr, _rx) = start(&dir, false);
-        assert!(matches!(offer(addr, 3, CS, &[f("../x", 1)]).1, Msg::Reject { .. }));
-        assert!(matches!(offer(addr, 4, 1024, &[f("x", 1)]).1, Msg::Reject { .. }));
-        assert!(matches!(offer(addr, 5, CS, &[f("x", 1), f("x", 1)]).1, Msg::Reject { .. }));
+        assert!(matches!(
+            offer(addr, 3, CS, &[f("../x", 1)]).1,
+            Msg::Reject { .. }
+        ));
+        assert!(matches!(
+            offer(addr, 4, 1024, &[f("x", 1)]).1,
+            Msg::Reject { .. }
+        ));
+        assert!(matches!(
+            offer(addr, 5, CS, &[f("x", 1), f("x", 1)]).1,
+            Msg::Reject { .. }
+        ));
         assert!(!dir.exists());
     }
 
@@ -734,8 +913,17 @@ mod tests {
             part[r.clone()].copy_from_slice(&files[0].data[r]);
         }
         fs::write(dir.join("r.bin.uftpart"), part).unwrap();
-        let ps = PartState { size, mtime: files[0].mtime, chunk_size: CS, done: vec![2, 0, 9] };
-        fs::write(dir.join("r.bin.uftpart.state"), serde_json::to_vec(&ps).unwrap()).unwrap();
+        let ps = PartState {
+            size,
+            mtime: files[0].mtime,
+            chunk_size: CS,
+            done: vec![2, 0, 9],
+        };
+        fs::write(
+            dir.join("r.bin.uftpart.state"),
+            serde_json::to_vec(&ps).unwrap(),
+        )
+        .unwrap();
 
         let (c, reply) = offer(addr, 6, CS, &files);
         let have = accepted(reply);
@@ -745,7 +933,9 @@ mod tests {
         assert!(!dir.join("r.bin.uftpart.state").exists());
         let ev = events(&rx);
         assert!(matches!(ev[0], RecvEvent::Started { resumed, .. } if resumed == 2 * CS));
-        assert!(matches!(ev.last(), Some(RecvEvent::Done { bytes, .. }) if *bytes == size - 2 * CS));
+        assert!(
+            matches!(ev.last(), Some(RecvEvent::Done { bytes, .. }) if *bytes == size - 2 * CS)
+        );
         fs::remove_dir_all(dir).unwrap();
     }
 
@@ -779,14 +969,22 @@ mod tests {
         fs::create_dir_all(&dir).unwrap();
         let p = dir.join("done.bin");
         fs::write(&p, &files[0].data).unwrap();
-        File::options().write(true).open(&p).unwrap().set_modified(system_time(files[0].mtime + 1).unwrap()).unwrap();
+        File::options()
+            .write(true)
+            .open(&p)
+            .unwrap()
+            .set_modified(system_time(files[0].mtime + 1).unwrap())
+            .unwrap();
 
         let (c, reply) = offer(addr, 7, CS, &files);
         let have = accepted(reply);
         assert_eq!(have, vec![vec![0, 1]]);
         assert_eq!(transfer(addr, 7, c, &files, &have, false), Msg::Done);
         assert!(!dir.join("done (1).bin").exists());
-        assert!(matches!(events(&rx).last(), Some(RecvEvent::Done { bytes: 0, .. })));
+        assert!(matches!(
+            events(&rx).last(),
+            Some(RecvEvent::Done { bytes: 0, .. })
+        ));
         fs::remove_dir_all(dir).unwrap();
     }
 
@@ -816,14 +1014,28 @@ mod tests {
         let have = accepted(reply);
         assert_eq!(transfer(addr, 9, c, &files, &have, false), Msg::Done);
         assert!(!dir.exists());
-        assert!(matches!(events(&rx).last(), Some(RecvEvent::Done { bytes, .. }) if *bytes == 3 * CS));
+        assert!(
+            matches!(events(&rx).last(), Some(RecvEvent::Done { bytes, .. }) if *bytes == 3 * CS)
+        );
     }
 
     #[test]
     fn safe_paths() {
         assert_eq!(safe_rel_path("a/b.txt"), Some(PathBuf::from("a/b.txt")));
         assert_eq!(safe_rel_path("..a/.b"), Some(PathBuf::from("..a/.b")));
-        for p in ["", "/etc/passwd", "../x", "a/../b", "./a", "a/.", "a//b", "a/", "a\\b", "a\0b", ".."] {
+        for p in [
+            "",
+            "/etc/passwd",
+            "../x",
+            "a/../b",
+            "./a",
+            "a/.",
+            "a//b",
+            "a/",
+            "a\\b",
+            "a\0b",
+            "..",
+        ] {
             assert_eq!(safe_rel_path(p), None, "{p:?}");
         }
     }

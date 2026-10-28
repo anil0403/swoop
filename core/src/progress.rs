@@ -41,7 +41,14 @@ impl Meter {
             last_done: start_done,
             ema: 0.0,
             weight: 0.0,
-            snap: Snapshot { done: start_done, total, speed: 0.0, peak: 0.0, eta: None, elapsed: 0.0 },
+            snap: Snapshot {
+                done: start_done,
+                total,
+                speed: 0.0,
+                peak: 0.0,
+                eta: None,
+                elapsed: 0.0,
+            },
         }
     }
 
@@ -85,7 +92,10 @@ mod tests {
     fn run(m: &mut Meter, done: u64, rate: u64, secs: u64) -> Snapshot {
         let mut snap = None;
         for i in 1..=secs * 10 {
-            snap = Some(m.update_at(done + rate / 10 * i, m.start + Duration::from_millis(100 * i)));
+            snap = Some(m.update_at(
+                done + rate / 10 * i,
+                m.start + Duration::from_millis(100 * i),
+            ));
         }
         snap.unwrap()
     }

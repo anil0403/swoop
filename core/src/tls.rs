@@ -48,7 +48,8 @@ impl Identity {
 
     /// Fresh in-memory identity (tests, bench).
     pub fn generate() -> io::Result<Identity> {
-        let ck = rcgen::generate_simple_self_signed(vec!["uft".into()]).map_err(io::Error::other)?;
+        let ck =
+            rcgen::generate_simple_self_signed(vec!["uft".into()]).map_err(io::Error::other)?;
         Ok(Identity {
             cert: ck.cert.der().clone(),
             key: PrivateKeyDer::Pkcs8(PrivatePkcs8KeyDer::from(ck.signing_key.serialize_der())),
@@ -108,7 +109,10 @@ pub fn server_config(id: &Identity) -> io::Result<Arc<ServerConfig>> {
 pub fn client_config(id: &Identity, server_fp: &str) -> io::Result<Arc<ClientConfig>> {
     let p = provider();
     let fp = server_fp.to_ascii_lowercase();
-    let verifier = Arc::new(Pinned { fp, algs: p.signature_verification_algorithms });
+    let verifier = Arc::new(Pinned {
+        fp,
+        algs: p.signature_verification_algorithms,
+    });
     let cfg = ClientConfig::builder_with_provider(Arc::new(p))
         .with_protocol_versions(&[&rustls::version::TLS13])
         .map_err(io::Error::other)?
@@ -159,9 +163,17 @@ fn provider() -> CryptoProvider {
     use aws_lc_rs::cipher_suite::*;
     let mut p = aws_lc_rs::default_provider();
     p.cipher_suites = if has_aes() {
-        vec![TLS13_AES_128_GCM_SHA256, TLS13_AES_256_GCM_SHA384, TLS13_CHACHA20_POLY1305_SHA256]
+        vec![
+            TLS13_AES_128_GCM_SHA256,
+            TLS13_AES_256_GCM_SHA384,
+            TLS13_CHACHA20_POLY1305_SHA256,
+        ]
     } else {
-        vec![TLS13_CHACHA20_POLY1305_SHA256, TLS13_AES_128_GCM_SHA256, TLS13_AES_256_GCM_SHA384]
+        vec![
+            TLS13_CHACHA20_POLY1305_SHA256,
+            TLS13_AES_128_GCM_SHA256,
+            TLS13_AES_256_GCM_SHA384,
+        ]
     };
     p
 }
@@ -332,6 +344,9 @@ mod tests {
         rx.join().unwrap();
         let secs = t.elapsed().as_secs_f64();
         let suite = c.conn.negotiated_cipher_suite().unwrap().suite();
-        println!("TLS loopback {suite:?}: {:.2} GB/s", TOTAL as f64 / secs / 1e9);
+        println!(
+            "TLS loopback {suite:?}: {:.2} GB/s",
+            TOTAL as f64 / secs / 1e9
+        );
     }
 }
