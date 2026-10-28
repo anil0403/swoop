@@ -1,13 +1,20 @@
 //! Device identity, pinned TLS 1.3 and hardware-based cipher choice.
 
 use crate::proto::Caps;
-use rustls::pki_types::{CertificateDer, PrivateKeyDer, PrivatePkcs8KeyDer};
-use rustls::{ClientConfig, ClientConnection, ServerConfig, ServerConnection, StreamOwned};
+use rustls::client::danger::{HandshakeSignatureValid, ServerCertVerified, ServerCertVerifier};
+use rustls::crypto::{CryptoProvider, WebPkiSupportedAlgorithms, aws_lc_rs};
+use rustls::pki_types::{CertificateDer, PrivateKeyDer, PrivatePkcs8KeyDer, ServerName, UnixTime};
+use rustls::server::danger::{ClientCertVerified, ClientCertVerifier};
+use rustls::{
+    ClientConfig, ClientConnection, ConnectionCommon, DigitallySignedStruct, DistinguishedName,
+    ServerConfig, ServerConnection, SignatureScheme, StreamOwned,
+};
 use std::fs;
 use std::io;
 use std::net::{SocketAddr, TcpStream};
 use std::path::Path;
 use std::sync::Arc;
+use std::time::Duration;
 
 pub type TlsClient = StreamOwned<ClientConnection, TcpStream>;
 pub type TlsServer = StreamOwned<ServerConnection, TcpStream>;
@@ -81,22 +88,164 @@ pub fn caps() -> Caps {
 /// Cipher order: AES-128-GCM first with hardware AES, ChaCha20-Poly1305 first without;
 /// without AES the server ignores the client's order.
 pub fn server_config(id: &Identity) -> io::Result<Arc<ServerConfig>> {
-    todo!("{}", id.cert.len())
+    let p = provider();
+    let verifier = Arc::new(AnyClient(p.signature_verification_algorithms));
+    let mut cfg = ServerConfig::builder_with_provider(Arc::new(p))
+        .with_protocol_versions(&[&rustls::version::TLS13])
+        .map_err(io::Error::other)?
+        .with_client_cert_verifier(verifier)
+        .with_single_cert(vec![id.cert.clone()], id.key.clone_key())
+        .map_err(io::Error::other)?;
+    cfg.ignore_client_order = !has_aes();
+    Ok(Arc::new(cfg))
 }
 
 /// TLS 1.3 only. Accepts the server only if its cert fingerprint equals `server_fp`.
 /// Presents `id` as client cert. Same cipher ordering rule as the server.
 pub fn client_config(id: &Identity, server_fp: &str) -> io::Result<Arc<ClientConfig>> {
-    todo!("{} {server_fp}", id.cert.len())
+    let p = provider();
+    let fp = server_fp.to_ascii_lowercase();
+    let verifier = Arc::new(Pinned { fp, algs: p.signature_verification_algorithms });
+    let cfg = ClientConfig::builder_with_provider(Arc::new(p))
+        .with_protocol_versions(&[&rustls::version::TLS13])
+        .map_err(io::Error::other)?
+        .dangerous()
+        .with_custom_certificate_verifier(verifier)
+        .with_client_auth_cert(vec![id.cert.clone()], id.key.clone_key())
+        .map_err(io::Error::other)?;
+    Ok(Arc::new(cfg))
 }
 
 /// TCP connect (5 s timeout, 30 s read timeout) and complete the TLS handshake.
 pub fn connect(addr: SocketAddr, cfg: Arc<ClientConfig>) -> io::Result<TlsClient> {
-    todo!("{addr} {}", Arc::strong_count(&cfg))
+    let mut tcp = TcpStream::connect_timeout(&addr, Duration::from_secs(5))?;
+    prep(&tcp)?;
+    let name = ServerName::try_from("uft").map_err(io::Error::other)?;
+    let mut conn = ClientConnection::new(cfg, name).map_err(io::Error::other)?;
+    handshake(&mut conn, &mut tcp)?;
+    Ok(StreamOwned::new(conn, tcp))
 }
 
 /// Complete the server handshake on an accepted socket (30 s read timeout).
 /// Returns the stream and the client's cert fingerprint.
-pub fn accept(tcp: TcpStream, cfg: Arc<ServerConfig>) -> io::Result<(TlsServer, String)> {
-    todo!("{tcp:?} {}", Arc::strong_count(&cfg))
+pub fn accept(mut tcp: TcpStream, cfg: Arc<ServerConfig>) -> io::Result<(TlsServer, String)> {
+    prep(&tcp)?;
+    let mut conn = ServerConnection::new(cfg).map_err(io::Error::other)?;
+    handshake(&mut conn, &mut tcp)?;
+    let fp = match conn.peer_certificates() {
+        Some([cert, ..]) => fingerprint(cert),
+        _ => return Err(io::Error::other("client sent no certificate")),
+    };
+    Ok((StreamOwned::new(conn, tcp), fp))
+}
+
+// No SO_SNDBUF/SO_RCVBUF: setting them disables Linux autotuning.
+fn prep(tcp: &TcpStream) -> io::Result<()> {
+    tcp.set_read_timeout(Some(Duration::from_secs(30)))?;
+    tcp.set_nodelay(true)
+}
+
+fn handshake<D>(conn: &mut ConnectionCommon<D>, tcp: &mut TcpStream) -> io::Result<()> {
+    while conn.is_handshaking() {
+        conn.complete_io(tcp)?;
+    }
+    Ok(())
+}
+
+fn provider() -> CryptoProvider {
+    use aws_lc_rs::cipher_suite::*;
+    let mut p = aws_lc_rs::default_provider();
+    p.cipher_suites = if has_aes() {
+        vec![TLS13_AES_128_GCM_SHA256, TLS13_AES_256_GCM_SHA384, TLS13_CHACHA20_POLY1305_SHA256]
+    } else {
+        vec![TLS13_CHACHA20_POLY1305_SHA256, TLS13_AES_128_GCM_SHA256, TLS13_AES_256_GCM_SHA384]
+    };
+    p
+}
+
+/// Client side of pinning: the server cert must hash to `fp`.
+#[derive(Debug)]
+struct Pinned {
+    fp: String,
+    algs: WebPkiSupportedAlgorithms,
+}
+
+impl ServerCertVerifier for Pinned {
+    fn verify_server_cert(
+        &self,
+        end_entity: &CertificateDer<'_>,
+        _: &[CertificateDer<'_>],
+        _: &ServerName<'_>,
+        _: &[u8],
+        _: UnixTime,
+    ) -> Result<ServerCertVerified, rustls::Error> {
+        if fingerprint(end_entity) == self.fp {
+            Ok(ServerCertVerified::assertion())
+        } else {
+            Err(rustls::Error::General("server fingerprint mismatch".into()))
+        }
+    }
+
+    fn verify_tls12_signature(
+        &self,
+        msg: &[u8],
+        cert: &CertificateDer<'_>,
+        dss: &DigitallySignedStruct,
+    ) -> Result<HandshakeSignatureValid, rustls::Error> {
+        rustls::crypto::verify_tls12_signature(msg, cert, dss, &self.algs)
+    }
+
+    fn verify_tls13_signature(
+        &self,
+        msg: &[u8],
+        cert: &CertificateDer<'_>,
+        dss: &DigitallySignedStruct,
+    ) -> Result<HandshakeSignatureValid, rustls::Error> {
+        rustls::crypto::verify_tls13_signature(msg, cert, dss, &self.algs)
+    }
+
+    fn supported_verify_schemes(&self) -> Vec<SignatureScheme> {
+        self.algs.supported_schemes()
+    }
+}
+
+/// Any client cert passes; the caller decides trust by fingerprint.
+#[derive(Debug)]
+struct AnyClient(WebPkiSupportedAlgorithms);
+
+impl ClientCertVerifier for AnyClient {
+    fn root_hint_subjects(&self) -> &[DistinguishedName] {
+        &[]
+    }
+
+    fn verify_client_cert(
+        &self,
+        _: &CertificateDer<'_>,
+        _: &[CertificateDer<'_>],
+        _: UnixTime,
+    ) -> Result<ClientCertVerified, rustls::Error> {
+        Ok(ClientCertVerified::assertion())
+    }
+
+    fn verify_tls12_signature(
+        &self,
+        msg: &[u8],
+        cert: &CertificateDer<'_>,
+        dss: &DigitallySignedStruct,
+    ) -> Result<HandshakeSignatureValid, rustls::Error> {
+        rustls::crypto::verify_tls12_signature(msg, cert, dss, &self.0)
+    }
+
+    fn verify_tls13_signature(
+        &self,
+        msg: &[u8],
+        cert: &CertificateDer<'_>,
+        dss: &DigitallySignedStruct,
+    ) -> Result<HandshakeSignatureValid, rustls::Error> {
+        rustls::crypto::verify_tls13_signature(msg, cert, dss, &self.0)
+    }
+
+    fn supported_verify_schemes(&self) -> Vec<SignatureScheme> {
+        self.0.supported_schemes()
+    }
 }
