@@ -1,0 +1,84 @@
+name: release
+
+# Builds the release files for a v* tag and publishes them on its GitHub release (see VERSIONING.md).
+# Run by hand with no tag to only build them (kept as workflow artifacts).
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Tag to release (empty = build only)
+        default: ''
+
+permissions:
+  contents: write
+
+env:
+  TAG: ${{ inputs.tag || (github.ref_type == 'tag' && github.ref_name) || '' }}
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        include:
+          # glibc, not musl: musl's memcpy halves engine speed. Built on 22.04 (glibc 2.35) so it runs on
+          # Ubuntu 22.04+, Debian 12+, Fedora 36+ and rolling distros.
+          - { os: ubuntu-22.04, target: x86_64-unknown-linux-gnu, name: uft-linux-x86_64 }
+          - { os: ubuntu-22.04-arm, target: aarch64-unknown-linux-gnu, name: uft-linux-aarch64 }
+          - { os: ubuntu-latest, target: aarch64-linux-android, name: uft-android-aarch64 }
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TAG }}
+      - if: env.TAG != ''
+        run: .github/set-version.sh "$TAG"
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - name: build
+        working-directory: core
+        run: |
+          if [[ ${{ matrix.target }} == *android* ]]; then
+            ANDROID_NDK_HOME="$ANDROID_NDK_LATEST_HOME" ../scripts/build-android.sh ${{ matrix.target }}
+          else
+            cargo build --release --locked --target ${{ matrix.target }}
+          fi
+          # Laid out like a prefix (bin/...) so it unpacks straight into ~/.local or Termux's $PREFIX.
+          mkdir -p ../pkg/bin ../dist
+          cp target/${{ matrix.target }}/release/uft ../pkg/bin/
+          tar -czf ../dist/${{ matrix.name }}.tar.gz -C ../pkg bin
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.name }}
+          path: dist/${{ matrix.name }}.tar.gz
+
+  publish:
+    needs: build
+    if: github.event_name == 'push' || inputs.tag != ''
+    runs-on: ubuntu-latest
+    environment: release
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - name: publish
+        working-directory: dist
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          sha256sum *.tar.gz > SHA256SUMS
+          pre=""
+          [[ $TAG == *-* ]] && pre=--prerelease
+          gh release view "$TAG" > /dev/null 2>&1 ||
+            gh release create "$TAG" --draft --verify-tag --generate-notes $pre
+          gh release upload "$TAG" * --clobber
+          # A beta stays a pre-release, so .../releases/latest/download/... always points at a release.
+          gh release edit "$TAG" --draft=false ${pre:---latest}
