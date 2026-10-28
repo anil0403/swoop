@@ -387,7 +387,12 @@ fn finalize(t: &Target) -> io::Result<()> {
         f.set_len(t.size)?;
     }
     if let Some(m) = system_time(t.mtime) {
-        f.set_modified(m)?;
+        // Android's shared storage (Download/) refuses to set times on some versions; keep the file.
+        // ponytail: such a file then looks changed to a resend, which saves a "name (1)" copy.
+        match f.set_modified(m) {
+            Err(e) if e.kind() == io::ErrorKind::PermissionDenied => {}
+            r => r?,
+        }
     }
     drop(f);
     let mut dest = t.dest.clone();
