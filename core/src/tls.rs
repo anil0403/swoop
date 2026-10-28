@@ -249,3 +249,86 @@ impl ClientCertVerifier for AnyClient {
         self.0.supported_schemes()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::{Read, Write};
+    use std::net::TcpListener;
+    use std::thread;
+    use std::time::{Instant, SystemTime};
+
+    type Accepted = thread::JoinHandle<io::Result<(TlsServer, String)>>;
+
+    fn server() -> (SocketAddr, String, Accepted) {
+        let id = Identity::generate().unwrap();
+        let (cfg, fp) = (server_config(&id).unwrap(), id.fingerprint());
+        let l = TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = l.local_addr().unwrap();
+        (addr, fp, thread::spawn(move || accept(l.accept()?.0, cfg)))
+    }
+
+    #[test]
+    fn pinned_handshake_round_trips() {
+        let (addr, fp, srv) = server();
+        let me = Identity::generate().unwrap();
+        let mut c = connect(addr, client_config(&me, &fp).unwrap()).unwrap();
+        let (mut s, client_fp) = srv.join().unwrap().unwrap();
+        assert_eq!(client_fp, me.fingerprint());
+        c.write_all(b"ping").unwrap();
+        c.flush().unwrap();
+        let mut buf = [0; 4];
+        s.read_exact(&mut buf).unwrap();
+        assert_eq!(&buf, b"ping");
+        s.write_all(b"pong").unwrap();
+        s.flush().unwrap();
+        c.read_exact(&mut buf).unwrap();
+        assert_eq!(&buf, b"pong");
+    }
+
+    #[test]
+    fn wrong_fingerprint_is_refused() {
+        let (addr, _, srv) = server();
+        let me = Identity::generate().unwrap();
+        assert!(connect(addr, client_config(&me, &"0".repeat(64)).unwrap()).is_err());
+        assert!(srv.join().unwrap().is_err());
+    }
+
+    #[test]
+    fn identity_persists() {
+        let nanos = SystemTime::UNIX_EPOCH.elapsed().unwrap().as_nanos();
+        let dir = std::env::temp_dir().join(format!("uft-tls-{}-{nanos}", std::process::id()));
+        let a = Identity::load_or_create(&dir).unwrap();
+        let b = Identity::load_or_create(&dir).unwrap();
+        assert_eq!(a.fingerprint(), b.fingerprint());
+        assert_eq!(a.fingerprint().len(), 64);
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    #[ignore]
+    fn loopback_throughput() {
+        const TOTAL: usize = 1 << 30;
+        let (addr, fp, srv) = server();
+        let me = Identity::generate().unwrap();
+        let mut c = connect(addr, client_config(&me, &fp).unwrap()).unwrap();
+        let (mut s, _) = srv.join().unwrap().unwrap();
+        let rx = thread::spawn(move || {
+            let mut buf = vec![0; 1 << 20];
+            let mut got = 0;
+            while got < TOTAL {
+                got += s.read(&mut buf).unwrap();
+            }
+        });
+        let buf = vec![7u8; 1 << 20];
+        let t = Instant::now();
+        for _ in 0..TOTAL / buf.len() {
+            c.write_all(&buf).unwrap();
+        }
+        c.flush().unwrap();
+        rx.join().unwrap();
+        let secs = t.elapsed().as_secs_f64();
+        let suite = c.conn.negotiated_cipher_suite().unwrap().suite();
+        println!("TLS loopback {suite:?}: {:.2} GB/s", TOTAL as f64 / secs / 1e9);
+    }
+}
