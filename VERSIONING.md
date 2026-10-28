@@ -165,11 +165,11 @@ first and follow it. Also:
 
 ---
 
-## How it will be set up
+## How it is set up
 
-**Not built yet.** The rules above apply to commits now; the workflows below come with the first app release
-(Phase 7 in [`PLAN.md`](PLAN.md)). Today [`.github/workflows/ci.yml`](.github/workflows/ci.yml) only builds and
-tests.
+[`release.yml`](.github/workflows/release.yml) and [`set-version.sh`](.github/set-version.sh) exist.
+`version.yml` is **not built yet**: until it is, a release is made by pushing a `v*` tag by hand. The rules above
+apply to commits now.
 
 `.github/workflows/version.yml` will run **after CI passes on a push to main**, **once a day at 00:00 UTC** and **by
 hand** (Actions ▸ Version ▸ Run workflow, with `bump`: `auto`, `major`, `minor` or `patch`):
@@ -196,16 +196,20 @@ hand** (Actions ▸ Version ▸ Run workflow, with `bump`: `auto`, `major`, `min
 8. **Beta:** only tag the commit (no version commit). Create a draft **pre-release**.
 9. Start `.github/workflows/release.yml` for the new tag (a tag pushed by a workflow starts no workflow by itself).
 
-`release.yml` (also on a `v*` tag pushed by hand, or by hand from Actions):
+`release.yml` runs on every `v*` tag (pushed by `version.yml` or by hand), or by hand from Actions with a `tag`
+(no `tag` only builds, to check the build):
 
-1. Set the version and build number from the tag with `set-version.sh` (a beta is only a tag, so this happens at build
-   time and isn't committed).
-2. Build:
-   - **Linux:** the Flutter app bundle (tarball and AppImage) and the `uft` binary for x86_64 and aarch64.
-   - **Android:** the signed APK, and `uft` binaries for aarch64, armv7 and x86_64 (for Termux).
-3. Upload (after the owner approves, if the `release` environment has required reviewers) the Linux files, the APK,
-   the `uft` binaries and `SHA256SUMS` to the GitHub release.
-4. Publish the draft. A release is marked "latest"; a beta never is, and stays a pre-release.
+1. Set the version from the tag with `set-version.sh` (a beta is only a tag, so this happens at build time and isn't
+   committed).
+2. Build, each packed as a tarball that unpacks into a prefix (`bin/uft`):
+   - **Linux:** `uft-linux-x86_64.tar.gz`, `uft-linux-aarch64.tar.gz` (glibc 2.35 and newer).
+   - **Android:** `uft-android-aarch64.tar.gz` (the `uft` command, for Termux).
+   - **Later:** the Flutter Linux app goes into the Linux tarballs (same names), and the Android app ships as
+     `uft-android.apk`, signed (Phases 3, 4 and 7 in [`PLAN.md`](PLAN.md)).
+3. Upload (after the owner approves, if the `release` environment has required reviewers) the files and
+   `SHA256SUMS` to the GitHub release, making a draft first if `version.yml` didn't.
+4. Publish the draft. A release is marked "latest"; a beta never is, and stays a pre-release. The install commands
+   in the [README](README.md#install) use `releases/latest`, so they always get the newest release, never a beta.
 5. **Package repositories are by hand for now:** the AUR package, and later Flatpak and F-Droid, are updated by the
    owner after a release.
 
@@ -213,5 +217,6 @@ hand** (Actions ▸ Version ▸ Run workflow, with `bump`: `auto`, `major`, `min
 online is still open; package managers (AUR, Flatpak, F-Droid) update by themselves.
 
 **The first release, 1.0.0, is made by hand.** No tags exist yet, and commits before this file was adopted have no
-type. When the first version is ready, run the version workflow by hand with `bump: major`: counting from 0.0.0 over
-all history, that makes `v1.0.0`. From then on, everything above is automatic.
+type. When the first version is ready, the owner pushes the tag `v1.0.0` (`git tag v1.0.0 && git push origin v1.0.0`),
+or, once `version.yml` exists, runs it by hand with `bump: major`: counting from 0.0.0 over all history, that makes
+`v1.0.0`. From then on, everything above is automatic.
