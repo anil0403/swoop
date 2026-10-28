@@ -2,7 +2,8 @@
 
 Offline, zero-config file transfer between Linux and Android at the full speed of your local link (Wi-Fi, Ethernet, hotspot or Wi-Fi Direct). No internet, no accounts.
 
-Status: the transfer engine, the `uft` command and the Linux app work; the Android app is not built yet. See
+Status: the transfer engine, the `uft` command, and the Linux and Android apps work (Android tested on emulators,
+API 26 and 37; real phones pending). See
 [PLAN.md](PLAN.md).
 
 ## Install
@@ -16,7 +17,9 @@ command, into `~/.local`. Run it again to update:
 mkdir -p ~/.local && curl -fsSL https://github.com/anil0403/ultra-fast-data-transfer/releases/latest/download/uft-linux-$(uname -m).tar.gz | tar -xz -C ~/.local
 ```
 
-Android app, once it ships (Phase 4): open `https://github.com/anil0403/ultra-fast-data-transfer/releases/latest/download/uft-android.apk` on the phone, or from a computer with `adb`:
+Android app (8.0 and newer; in releases once the signing key is set up, see [VERSIONING.md](VERSIONING.md)): open
+`https://github.com/anil0403/ultra-fast-data-transfer/releases/latest/download/uft-android.apk` on the phone, or
+from a computer with `adb`:
 
 ```sh
 curl -fsSLo /tmp/uft.apk https://github.com/anil0403/ultra-fast-data-transfer/releases/latest/download/uft-android.apk && adb install -r /tmp/uft.apk
@@ -57,7 +60,18 @@ flutter build linux --release  # -> build/linux/x64/release/bundle/uft-app
 ./test-e2e.sh                  # full flow, app ↔ CLI in a network namespace (needs sudo and a display)
 ```
 
-Android (NDK, API 26+):
+Devices on networks where they can't find each other (guest Wi-Fi, different subnets): tap the link icon in the
+app and type the other device's address, or one of the `uft://` links it shows there.
+
+The Android app (also needs a JDK 17+ and the Android SDK; set `JAVA_HOME`):
+
+```sh
+cd app
+flutter build apk --release   # -> build/app/outputs/flutter-apk/app-release.apk (arm64, armv7, x86_64)
+emulator -avd NAME -no-window & ./test-android.sh   # full flow, app ↔ CLI on this computer (or a phone over adb)
+```
+
+The `uft` command for Android (NDK, API 26+):
 
 ```sh
 rustup target add aarch64-linux-android

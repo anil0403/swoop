@@ -112,12 +112,21 @@ Every device is the same peer: announces itself, listens while receiving is enab
 - [x] 3.3 Zero-config: name from the hostname, save to `Downloads/uft`, config in the XDG data dir; receiving and visible while the app is open.
 - [x] 3.4 End-to-end (`app/test-e2e.sh`): app ↔ `uft` CLI in a network namespace, both directions, files intact. The file picker itself is not driven.
 - [x] 3.5 CI: analyze, test, Linux build.
-- [ ] 3.6 Later: cancel/pause (needs core support), drag and drop, receiving on/off switch, tray icon, QR/`uft://` link for networks scanning can't reach, app icon.
+- [ ] 3.6 Later: cancel/pause (needs core support), drag and drop, receiving on/off switch, tray icon, QR code for the `uft://` link, app icon.
+
+## Phase 4 tasks
+- [x] 4.1 Kotlin layer (`MainActivity.kt`, `TransferService.kt`): device name, save to `Download/uft` (storage permission up to Android 10), multicast lock, Wi-Fi high-perf/low-latency + wake locks while transferring, process bound to Wi-Fi/Ethernet (works on networks without internet while mobile data is on), foreground service (`dataSync`) so receiving continues in the background.
+- [x] 4.2 Picking through the system picker (files, or a whole folder): each file is handed to Rust as `/proc/self/fd/N` and read from a duplicated descriptor (core `Source::Named`), no copying.
+- [x] 4.3 Connect by address or `uft://` link (both apps): for networks where scanning can't reach.
+- [x] 4.4 End-to-end on emulators (`app/test-android.sh`): app ↔ CLI both directions, API 26 and API 37. Found and fixed: Android shared storage refusing to set file times.
+- [x] 4.5 CI builds the APK; releases ship a signed `uft-android.apk` once the owner adds the keystore secrets (7.3).
+- [ ] 4.6 Real phones: all 4 pairings at ≥95% of iperf3 (needs the Phase 0 numbers), API 26 and latest; Wi-Fi without internet; hotspot (the phone hosting it while also on Wi-Fi is not handled yet).
+- [ ] 4.7 Later: Share-to-uft intent, progress in the notification, media scan for Android 8–10 (Gallery), cancel, keep transferring after the app is swiped away, app icon and name.
 
 ## Release tasks (Phase 7, see VERSIONING.md)
 - [x] 7.1 `release.yml`: on each `v*` tag, `uft` tarballs (Linux x86_64 + aarch64, Android aarch64) and `SHA256SUMS`; one-line install commands in README.
 - [x] 7.2 Flutter Linux app inside the Linux tarballs (`lib/uft/`, `bin/uft-app`, `share/applications/uft.desktop`), so the same one-liner installs it.
-- [ ] 7.3 Signed `uft-android.apk` on each release (the owner adds the keystore as repository secrets). With Phase 4.
+- [ ] 7.3 Signed `uft-android.apk` on each release: built ✅; waits for the owner to add the keystore secrets (VERSIONING.md).
 - [x] 7.4 `version.yml`: automatic versions and tags from commit types (`next-version.sh`, tested in CI).
 
 ## Test matrix (each release)
