@@ -1,0 +1,87 @@
+name: version
+
+# Picks the next version from the commit types, tags it and starts release.yml (see VERSIONING.md).
+on:
+  workflow_run:
+    workflows: [ci]
+    types: [completed]
+    branches: [main]
+  schedule:
+    - cron: '0 0 * * *'
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: auto = from the commit types
+        type: choice
+        options: [auto, major, minor, patch]
+        default: auto
+
+permissions:
+  contents: write
+  actions: write
+
+concurrency: version
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  version:
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.event == 'push'
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      # The commit to version is the one the last finished CI run on main tested, so it has always passed CI.
+      - name: last CI run on main
+        id: ci
+        run: |
+          read -r conclusion sha < <(gh run list --workflow ci.yml --branch main --event push --status completed \
+            --limit 1 --json conclusion,headSha -q '.[0] | "\(.conclusion) \(.headSha)"')
+          if [[ $conclusion != success ]]; then
+            echo "::error::the last CI run on main ($sha) ended with: ${conclusion:-none}"
+            exit 1
+          fi
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.ci.outputs.sha }}
+          fetch-depth: 0
+      - name: next version
+        id: next
+        run: |
+          case ${{ github.event_name }} in
+            workflow_run) event=push ;;
+            schedule) event=nightly ;;
+            *) event=manual ;;
+          esac
+          tag=$(.github/next-version.sh "$event" "${{ inputs.bump || 'auto' }}")
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+      - name: tag, draft the release, start release.yml
+        if: steps.next.outputs.tag != ''
+        env:
+          TAG: ${{ steps.next.outputs.tag }}
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          last=$(git describe --tags --abbrev=0 --match 'v[0-9]*' --exclude '*-*' 2> /dev/null || true)
+          if [[ $TAG == *-* ]]; then
+            pre=--prerelease
+            git tag "$TAG"
+            git push origin "$TAG"
+          else
+            pre=
+            .github/set-version.sh "$TAG"
+            git commit -qam "chore: release $TAG"
+            git tag "$TAG"
+            # Atomic: if main moved since the CI run, neither is pushed, and the next run makes the release.
+            if ! git push --atomic origin HEAD:main "$TAG"; then
+              echo "::notice::main moved; the next run makes the release"
+              exit 0
+            fi
+          fi
+          gh release create "$TAG" --draft --verify-tag --generate-notes ${last:+--notes-start-tag "$last"} $pre
+          gh workflow run release.yml -f tag="$TAG"
+          echo "::notice::$TAG tagged; release.yml builds and publishes it"
