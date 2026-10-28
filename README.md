@@ -39,9 +39,14 @@ Linux (Rust stable, cmake, clang):
 cd core
 cargo build --release
 ./target/release/uft bench --size 4G         # in-process loopback benchmark
-./target/release/uft recv --dir ~/Downloads  # receiver: prints address + fingerprint
-./target/release/uft send HOST FINGERPRINT file1 dir2
+./target/release/uft recv --dir ~/Downloads  # receiver: nearby devices find it
+./target/release/uft scan                    # on another device: list receivers
+./target/release/uft send phone-name file1 dir2
 ```
+
+`send` takes a device name or fingerprint prefix from `scan`, an address, or the `uft://` link that `recv`
+prints (for networks where scanning can't reach). The receiver confirms a device it doesn't know yet: both sides
+show the same pairing code; answer `a` to trust that device from then on.
 
 Android (NDK, API 26+):
 
