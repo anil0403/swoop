@@ -6,6 +6,7 @@ pub const VERSION: u32 = 1;
 pub const DEFAULT_PORT: u16 = 47474;
 
 pub mod discover;
+pub mod pair;
 pub mod progress;
 pub mod proto;
 pub mod recv;
