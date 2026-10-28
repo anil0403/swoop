@@ -97,6 +97,12 @@ Every device is the same peer: announces itself, listens while receiving is enab
 - [ ] 1.11 CI runs build, tests, clippy, fmt and the bench (informational) ✅; hard >5% gate needs stable self-hosted hardware.
 - [ ] 1.12 Android aarch64 build ✅ (CI + local); run in Termux for phone engine numbers.
 
+## Release tasks (Phase 7, see VERSIONING.md)
+- [x] 7.1 `release.yml`: on each `v*` tag, `uft` tarballs (Linux x86_64 + aarch64, Android aarch64) and `SHA256SUMS`; one-line install commands in README.
+- [ ] 7.2 Flutter Linux app inside the Linux tarballs (same names, so the same one-liner installs it), with a `.desktop` entry. With Phase 3.
+- [ ] 7.3 Signed `uft-android.apk` on each release (the owner adds the keystore as repository secrets). With Phase 4.
+- [ ] 7.4 `version.yml`: automatic versions and tags from commit types.
+
 ## Test matrix (each release)
 4 pairings × {router Wi-Fi, one side wired, Android hotspot, Linux hotspot, isolated guest network, no network (BLE)} × hardware classes {budget Android, mid-range Android, flagship Android, Linux Intel Wi-Fi, Linux Realtek/MediaTek, Raspberry Pi 4/5, wired 1/2.5/10 GbE}.
 Record: discovery layer used, MB/s vs iperf3, taps from fresh install, resume, hash.
