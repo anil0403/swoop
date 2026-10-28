@@ -1,15 +1,22 @@
 //! Sender: offer files, then stripe chunks over adaptive parallel TLS streams.
 
-use crate::progress::Snapshot;
-use crate::proto::{self, CHUNK_SIZE, FileEntry, bad, chunk_count};
-use crate::tls::Identity;
+use crate::VERSION;
+use crate::progress::{Meter, Snapshot};
+use crate::proto::{self, CHUNK_SIZE, FileEntry, Msg, Role, bad, chunk_count};
+use crate::tls::{self, Identity};
+use rustls::ClientConfig;
 use std::collections::HashSet;
 use std::ffi::OsStr;
-use std::fs;
-use std::io;
-use std::net::SocketAddr;
-use std::os::unix::fs::MetadataExt;
+use std::fs::{self, File};
+use std::io::{self, BufWriter, Write};
+use std::net::{Shutdown, SocketAddr, TcpStream};
+use std::os::unix::fs::{FileExt, MetadataExt};
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::mpsc::{self, Receiver, SyncSender};
+use std::sync::Arc;
+use std::thread;
+use std::time::{Duration, Instant};
 
 pub enum Source {
     /// A file, or a directory sent recursively under its own name.
@@ -55,10 +62,210 @@ pub fn send(
     server_fp: &str,
     sources: &[Source],
     opts: &SendOptions,
-    on_progress: impl FnMut(&Snapshot, u32),
+    mut on_progress: impl FnMut(&Snapshot, u32),
 ) -> io::Result<SendStats> {
-    let _ = (addr, id, server_fp, sources, opts.streams, on_progress);
-    todo!()
+    let items = collect(sources)?;
+    let files: Vec<FileEntry> = items.iter().map(|i| i.entry.clone()).collect();
+    let total = files.iter().map(|f| f.size).sum();
+    let cfg = tls::client_config(id, server_fp)?;
+    let session = proto::random_u64();
+    let caps = tls::caps();
+    let hello = |role| Msg::Hello { version: VERSION, session, role, caps: caps.clone(), name: opts.name.clone() };
+
+    let mut ctrl = tls::connect(addr, cfg.clone())?;
+    proto::write_msg(&mut ctrl, &hello(Role::Control))?;
+    ctrl.flush()?;
+    match proto::read_msg(&mut ctrl)? {
+        Msg::Welcome { version: VERSION, .. } => {}
+        Msg::Welcome { version, .. } => return Err(bad(&format!("receiver speaks protocol {version}"))),
+        m => return Err(refused(m)),
+    }
+    proto::write_msg(&mut ctrl, &Msg::Offer { chunk_size: CHUNK_SIZE, files: files.clone() })?;
+    ctrl.flush()?;
+    let have = match proto::read_msg(&mut ctrl)? {
+        Msg::Accept { have } => have,
+        m => return Err(refused(m)),
+    };
+    let (work, resumed) = plan(&files, &have);
+    let job = Job {
+        items,
+        work,
+        next: AtomicUsize::new(0),
+        abort: AtomicBool::new(false),
+        ctrl: ctrl.sock.try_clone()?,
+        cfg,
+        addr,
+        hello: hello(Role::Data),
+    };
+
+    let start = Instant::now();
+    let mut meter = Meter::new(total, resumed);
+    let mut shown: Option<Instant> = None;
+    let mut probing = opts.streams == Streams::Auto && !job.work.is_empty();
+    let (mut win_start, mut win_done, mut rate_at_add) = (start, resumed, None);
+
+    thread::scope(|s| {
+        let mut handles = Vec::new();
+        let initial = match opts.streams {
+            _ if job.work.is_empty() => 0,
+            Streams::Fixed(n) => n.max(1),
+            Streams::Auto => 1,
+        };
+        for _ in 0..initial {
+            handles.push(s.spawn(|| stream(&job)));
+        }
+
+        let res = loop {
+            match proto::read_msg(&mut ctrl) {
+                Ok(Msg::Progress { done }) => {
+                    let snap = meter.update(done);
+                    let now = Instant::now();
+                    if shown.is_none_or(|t| now - t >= Duration::from_millis(100)) {
+                        on_progress(&snap, handles.len() as u32);
+                        shown = Some(now);
+                    }
+                    if probing && now - win_start >= WINDOW {
+                        let rate = done.saturating_sub(win_done) as f64 / (now - win_start).as_secs_f64();
+                        if should_add(handles.len() as u32, rate, rate_at_add, total.saturating_sub(done)) {
+                            rate_at_add = Some(rate);
+                            handles.push(s.spawn(|| stream(&job)));
+                        } else {
+                            probing = false;
+                        }
+                        (win_start, win_done) = (now, done);
+                    }
+                }
+                Ok(Msg::Done) => break Ok(()),
+                Ok(m) => break Err(refused(m)),
+                Err(e) => break Err(e),
+            }
+        };
+
+        // A stream that failed first set `abort` and shut the control socket; its error explains ours.
+        let stream_failed = res.is_err() && job.abort.swap(true, Ordering::SeqCst);
+        let streams = handles.len() as u32;
+        let mut stream_err = None;
+        for h in handles {
+            if let Err(e) = h.join().unwrap_or_else(|_| Err(io::Error::other("stream panicked"))) {
+                stream_err.get_or_insert(e);
+            }
+        }
+        // After Done the receiver has verified everything, so late stream errors don't matter.
+        if let Err(e) = res {
+            return Err(stream_err.filter(|_| stream_failed).unwrap_or(e));
+        }
+
+        let snap = meter.update(total);
+        on_progress(&snap, streams);
+        let secs = start.elapsed().as_secs_f64();
+        let bytes = total - resumed;
+        Ok(SendStats { bytes, resumed, secs, avg: bytes as f64 / secs, peak: snap.peak, streams })
+    })
+}
+
+const MAX_STREAMS: u32 = 8;
+/// Auto mode measures the acked rate over windows this long.
+const WINDOW: Duration = Duration::from_secs(2);
+
+/// Auto mode: after a window at `rate` bytes/s, open another stream? False ends probing.
+fn should_add(streams: u32, rate: f64, rate_at_last_add: Option<f64>, remaining: u64) -> bool {
+    streams < MAX_STREAMS
+        && remaining as f64 > rate * 2.0 * WINDOW.as_secs_f64()
+        && rate_at_last_add.is_none_or(|r| rate >= 1.05 * r)
+}
+
+fn refused(m: Msg) -> io::Error {
+    match m {
+        Msg::Reject { reason } => io::Error::other(format!("receiver rejected: {reason}")),
+        Msg::Error { message } => io::Error::other(format!("receiver error: {message}")),
+        m => bad(&format!("unexpected message {m:?}")),
+    }
+}
+
+/// State shared by all data streams of a session.
+struct Job {
+    items: Vec<Item>,
+    work: Vec<(u32, u64)>,
+    /// Index of the next unclaimed `work` entry.
+    next: AtomicUsize,
+    abort: AtomicBool,
+    /// Clone of the control socket, shut down to wake the control loop on abort.
+    ctrl: TcpStream,
+    cfg: Arc<ClientConfig>,
+    addr: SocketAddr,
+    hello: Msg,
+}
+
+type Chunk = (u32, u64, [u8; 32], Vec<u8>);
+
+// ponytail: a failed stream aborts the session instead of requeueing its chunks; resume covers it.
+fn stream(job: &Job) -> io::Result<()> {
+    let res = run_stream(job);
+    if res.is_err() && !job.abort.swap(true, Ordering::SeqCst) {
+        let _ = job.ctrl.shutdown(Shutdown::Both);
+    }
+    res
+}
+
+/// One data connection: a reader thread (disk + hash) feeding this thread (TLS writes).
+fn run_stream(job: &Job) -> io::Result<()> {
+    let mut w = BufWriter::with_capacity(256 << 10, tls::connect(job.addr, job.cfg.clone())?);
+    proto::write_msg(&mut w, &job.hello)?;
+    let (tx, rx) = mpsc::sync_channel::<Chunk>(2);
+    let (pool_tx, pool_rx) = mpsc::channel();
+    for _ in 0..3 {
+        pool_tx.send(Vec::with_capacity(CHUNK_SIZE as usize)).unwrap();
+    }
+    thread::scope(|s| {
+        let reader = s.spawn(|| read_chunks(job, tx, pool_rx));
+        // Owns rx and pool_tx so a failed write drops them and unblocks the reader.
+        let wrote = (move || {
+            for (file, index, hash, buf) in rx {
+                proto::write_chunk(&mut w, file, index, &hash, &buf)?;
+                let _ = pool_tx.send(buf);
+            }
+            w.flush()?;
+            w.get_mut().conn.send_close_notify();
+            w.flush()
+        })();
+        reader.join().unwrap_or_else(|_| Err(io::Error::other("reader panicked")))?;
+        wrote
+    })
+}
+
+fn read_chunks(job: &Job, tx: SyncSender<Chunk>, pool: Receiver<Vec<u8>>) -> io::Result<()> {
+    let mut open: Option<(u32, File)> = None;
+    while !job.abort.load(Ordering::Relaxed) {
+        let Some(&(file, index)) = job.work.get(job.next.fetch_add(1, Ordering::Relaxed)) else {
+            break;
+        };
+        let Ok(mut buf) = pool.recv() else { break };
+        let item = &job.items[file as usize];
+        let len = chunk_len(item.entry.size, index) as usize;
+        match &item.src {
+            // Pattern is written once per buffer; later chunks reuse it.
+            None if buf.len() != len => {
+                buf.clear();
+                buf.resize(len, 0xa5);
+            }
+            None => {}
+            Some(path) => {
+                if open.as_ref().is_none_or(|(f, _)| *f != file) {
+                    let f = File::open(path)?;
+                    let _ = rustix::fs::fadvise(&f, 0, None, rustix::fs::Advice::Sequential);
+                    open = Some((file, f));
+                }
+                // Same length as last time for all but a file's final chunk, so no zero-fill.
+                buf.resize(len, 0);
+                open.as_ref().unwrap().1.read_exact_at(&mut buf, index * CHUNK_SIZE)?;
+            }
+        }
+        let hash = *blake3::hash(&buf).as_bytes();
+        if tx.send((file, index, hash, buf)).is_err() {
+            break;
+        }
+    }
+    Ok(())
 }
 
 /// An offered file and where its bytes come from (None = synthetic).
@@ -175,5 +382,64 @@ mod tests {
         assert_eq!(resumed, CHUNK_SIZE + 5);
         let (work, resumed) = plan(&files, &[]);
         assert_eq!((work.len(), resumed), (4, 0));
+    }
+
+    #[test]
+    fn auto_stream_decision() {
+        let big = u64::MAX;
+        assert!(should_add(1, 100.0, None, big));
+        assert!(should_add(2, 105.0, Some(100.0), big));
+        assert!(!should_add(2, 104.0, Some(100.0), big));
+        assert!(!should_add(MAX_STREAMS, 1e9, Some(1.0), big));
+        assert!(!should_add(1, 100.0, None, 300));
+    }
+
+    #[test]
+    fn reads_chunks_at_offsets() {
+        let path = std::env::temp_dir().join(format!("uft-read-{}", proto::random_u64()));
+        let data: Vec<u8> = (0..CHUNK_SIZE + 10).map(|i| (i % 251) as u8).collect();
+        fs::write(&path, &data).unwrap();
+        let mut items = collect(&[Source::Path(path.clone())]).unwrap();
+        items.extend(collect(&[Source::Synthetic { name: "m".into(), size: 7 }]).unwrap());
+        let files: Vec<_> = items.iter().map(|i| i.entry.clone()).collect();
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let job = Job {
+            items,
+            work: plan(&files, &[]).0,
+            next: AtomicUsize::new(0),
+            abort: AtomicBool::new(false),
+            ctrl: TcpStream::connect(listener.local_addr().unwrap()).unwrap(),
+            cfg: Arc::new(
+                ClientConfig::builder().with_root_certificates(rustls::RootCertStore::empty()).with_no_client_auth(),
+            ),
+            addr: listener.local_addr().unwrap(),
+            hello: Msg::Done,
+        };
+
+        let (tx, rx) = mpsc::sync_channel(2);
+        let (pool_tx, pool_rx) = mpsc::channel();
+        for _ in 0..3 {
+            pool_tx.send(Vec::with_capacity(CHUNK_SIZE as usize)).unwrap();
+        }
+        let got = thread::scope(|s| {
+            let r = s.spawn(|| read_chunks(&job, tx, pool_rx));
+            let got: Vec<_> = rx
+                .iter()
+                .map(|(file, index, hash, buf)| {
+                    assert_eq!(hash, *blake3::hash(&buf).as_bytes());
+                    let c = (file, index, buf.clone());
+                    let _ = pool_tx.send(buf);
+                    c
+                })
+                .collect();
+            r.join().unwrap().unwrap();
+            got
+        });
+        fs::remove_file(path).unwrap();
+        assert_eq!(got.len(), 3);
+        assert_eq!(got[0].2, data[..CHUNK_SIZE as usize]);
+        assert_eq!((got[1].0, got[1].1, &got[1].2[..]), (0, 1, &data[CHUNK_SIZE as usize..]));
+        assert_eq!((got[2].0, got[2].2.len()), (1, 7));
+        assert!(got[2].2.iter().all(|&b| b != 0));
     }
 }
