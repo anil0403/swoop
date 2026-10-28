@@ -79,23 +79,23 @@ Every device is the same peer: announces itself, listens while receiving is enab
 
 ## Phase 0 tasks
 - [ ] 0.1 iperf3 laptop↔phone, both directions, `-P 1` and `-P 4`, 20 s: (a) router both Wi-Fi, (b) phone hotspot 5 GHz, (c) laptop hotspot 5 GHz.
-- [ ] 0.2 Storage: laptop + phone sequential write/read (1–4 GB, direct I/O).
+- [ ] 0.2 Storage: laptop ✅ + phone sequential write/read (1–4 GB, direct I/O).
 - [ ] 0.3 Laptop hotspot with home Wi-Fi off → does 5 GHz AP still work (regdomain fallback)?
-- [ ] 0.4 Record everything in `bench/baseline.md`.
+- [x] 0.4 Record everything in `bench/baseline.md` (laptop side done; phone + iperf3 rows pending).
 
 ## Phase 1 tasks
-- [ ] 1.1 Cargo workspace: `core/` (lib) + `bench/` (CLI).
-- [ ] 1.2 Protocol v1 spec: hello/capabilities (with version), offer, accept/reject, data frames, progress acks, done + hash, error.
-- [ ] 1.3 Identity: key/cert generation, fingerprint, pinned TLS (CLI flag for fingerprint until pairing exists).
-- [ ] 1.4 Pipeline sender/receiver with buffer pool, preallocation, chunk frames.
-- [ ] 1.5 Progress events: acked bytes, smoothed speed, ETA.
-- [ ] 1.6 Resume from last verified chunk.
-- [ ] 1.7 Multi-stream striping + adaptive stream controller.
-- [ ] 1.8 Small-file packing.
-- [ ] 1.9 Capability probe (AES/NEON/AVX2, link info on Linux) + cipher selection.
-- [ ] 1.10 Bench modes: mem→loopback→null, mem→net→null, disk→disk, full.
-- [ ] 1.11 CI perf gate on loopback bench (>5% regression fails).
-- [ ] 1.12 Cross-compile bench CLI for `aarch64-linux-android`, run in Termux → phone engine numbers before any Flutter work.
+- [x] 1.1 One crate `core/` (package `uft`): library + `uft` CLI binary.
+- [x] 1.2 Protocol v1 (`core/src/proto.rs`): hello/capabilities with version, offer, accept/reject (resume), chunk frames with BLAKE3, progress, done, error.
+- [x] 1.3 Identity: key/cert generation, fingerprint, pinned TLS 1.3 both ways (CLI takes the fingerprint until pairing exists).
+- [x] 1.4 Pipelined sender/receiver with buffer pools, preallocation, chunk frames.
+- [x] 1.5 Progress: receiver-acked bytes, smoothed speed, ETA.
+- [x] 1.6 Resume from verified chunks (state file per partial file; finished files skipped).
+- [x] 1.7 Multi-stream striping by chunk + adaptive stream controller.
+- [x] 1.8 Small files: one shared chunk queue, no per-file round trips (2,000-file test; 100k run pending).
+- [ ] 1.9 Capability probe: AES detection + cipher selection ✅; link info on Linux pending (Phase 6 diagnostics).
+- [x] 1.10 Bench modes: `uft bench` (mem→loopback→null), `send --synthetic` + `recv --null` (mem→net→null), `send`/`recv` (disk→disk, full).
+- [ ] 1.11 CI runs build, tests, clippy, fmt and the bench (informational) ✅; hard >5% gate needs stable self-hosted hardware.
+- [ ] 1.12 Android aarch64 build ✅ (CI + local); run in Termux for phone engine numbers.
 
 ## Test matrix (each release)
 4 pairings × {router Wi-Fi, one side wired, Android hotspot, Linux hotspot, isolated guest network, no network (BLE)} × hardware classes {budget Android, mid-range Android, flagship Android, Linux Intel Wi-Fi, Linux Realtek/MediaTek, Raspberry Pi 4/5, wired 1/2.5/10 GbE}.
