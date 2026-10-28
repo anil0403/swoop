@@ -106,9 +106,17 @@ Every device is the same peer: announces itself, listens while receiving is enab
 - [ ] 2.6 Direction reversal (receiver dials the sender when inbound is blocked): deferred. Both sides must listen for it, and the main cause (a Linux firewall) goes away when the Linux app opens its port (Phase 3).
 - [ ] 2.7 Real networks, 0 settings: laptop ↔ phone (Termux) on the router, the phone hotspot and the laptop hotspot.
 
+## Phase 3 tasks
+- [x] 3.1 Bridge (`app/rust/src/api/uft.rs`, flutter_rust_bridge): init, scan, receive (with offers), answer, send_files; progress as streams.
+- [x] 3.2 Main screen (`app/lib/main.dart`): this device's name and save folder, nearby devices (rescanned every few seconds), tap → files or folder → send, transfer cards (bar, MB/s, peak, ETA), offer dialog with the code (Decline / Accept / Always accept).
+- [x] 3.3 Zero-config: name from the hostname, save to `Downloads/uft`, config in the XDG data dir; receiving and visible while the app is open.
+- [x] 3.4 End-to-end (`app/test-e2e.sh`): app ↔ `uft` CLI in a network namespace, both directions, files intact. The file picker itself is not driven.
+- [x] 3.5 CI: analyze, test, Linux build.
+- [ ] 3.6 Later: cancel/pause (needs core support), drag and drop, receiving on/off switch, tray icon, QR/`uft://` link for networks scanning can't reach, app icon.
+
 ## Release tasks (Phase 7, see VERSIONING.md)
 - [x] 7.1 `release.yml`: on each `v*` tag, `uft` tarballs (Linux x86_64 + aarch64, Android aarch64) and `SHA256SUMS`; one-line install commands in README.
-- [ ] 7.2 Flutter Linux app inside the Linux tarballs (same names, so the same one-liner installs it), with a `.desktop` entry. With Phase 3.
+- [x] 7.2 Flutter Linux app inside the Linux tarballs (`lib/uft/`, `bin/uft-app`, `share/applications/uft.desktop`), so the same one-liner installs it.
 - [ ] 7.3 Signed `uft-android.apk` on each release (the owner adds the keystore as repository secrets). With Phase 4.
 - [x] 7.4 `version.yml`: automatic versions and tags from commit types (`next-version.sh`, tested in CI).
 

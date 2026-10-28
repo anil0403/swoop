@@ -2,15 +2,15 @@
 
 Offline, zero-config file transfer between Linux and Android at the full speed of your local link (Wi-Fi, Ethernet, hotspot or Wi-Fi Direct). No internet, no accounts.
 
-Status: the transfer engine and the `uft` command work; the Linux and Android apps are not built yet. See
+Status: the transfer engine, the `uft` command and the Linux app work; the Android app is not built yet. See
 [PLAN.md](PLAN.md).
 
 ## Install
 
-One line, from the newest [release](https://github.com/anil0403/ultra-fast-data-transfer/releases) (no root;
-there is no release yet: the first one is started by hand, see [VERSIONING.md](VERSIONING.md)).
+One line, from the newest [release](https://github.com/anil0403/ultra-fast-data-transfer/releases) (no root).
 
-Linux (x86_64 or aarch64, glibc 2.35+), into `~/.local/bin`. Run it again to update:
+Linux (x86_64 or aarch64, glibc 2.35+, GTK 3): the app (`uft-app`, also in the app menu as uft) and the `uft`
+command, into `~/.local`. Run it again to update:
 
 ```sh
 mkdir -p ~/.local && curl -fsSL https://github.com/anil0403/ultra-fast-data-transfer/releases/latest/download/uft-linux-$(uname -m).tar.gz | tar -xz -C ~/.local
@@ -47,6 +47,15 @@ cargo build --release
 `send` takes a device name or fingerprint prefix from `scan`, an address, or the `uft://` link that `recv`
 prints (for networks where scanning can't reach). The receiver confirms a device it doesn't know yet: both sides
 show the same pairing code; answer `a` to trust that device from then on.
+
+The Linux app (Flutter, see `app/.flutter-version`, plus the Linux build tools: clang, cmake, ninja, GTK 3
+headers):
+
+```sh
+cd app
+flutter build linux --release  # -> build/linux/x64/release/bundle/uft-app
+./test-e2e.sh                  # full flow, app ↔ CLI in a network namespace (needs sudo and a display)
+```
 
 Android (NDK, API 26+):
 
