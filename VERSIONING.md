@@ -167,18 +167,19 @@ first and follow it. Also:
 
 ## How it is set up
 
-[`release.yml`](.github/workflows/release.yml) and [`set-version.sh`](.github/set-version.sh) exist.
-`version.yml` is **not built yet**: until it is, a release is made by pushing a `v*` tag by hand. The rules above
-apply to commits now.
+Files: [`version.yml`](.github/workflows/version.yml) with [`next-version.sh`](.github/next-version.sh) (which
+picks the version, checked by [`test-next-version.sh`](.github/test-next-version.sh) in CI),
+[`release.yml`](.github/workflows/release.yml) and [`set-version.sh`](.github/set-version.sh).
 
-`.github/workflows/version.yml` will run **after CI passes on a push to main**, **once a day at 00:00 UTC** and **by
-hand** (Actions ▸ Version ▸ Run workflow, with `bump`: `auto`, `major`, `minor` or `patch`):
+[`version.yml`](.github/workflows/version.yml) runs **after CI passes on a push to main**, **once a day at 00:00 UTC** and **by
+hand** (Actions ▸ version ▸ Run workflow, with `bump`: `auto`, `major`, `minor` or `patch`):
 
 1. `last` = the newest tag that is not a beta (`git describe --tags --abbrev=0 --exclude '*-*'`).
 2. Read the commit **subjects** since `last` (bodies can quote other commits). `docs:`, `ci:` and `test:` commits,
    and commits that change only docs, `bench/`, `.github/` or `LICENSE` files, count for nothing.
 3. On a push with nothing new that counts since the newest tag (betas included): stop.
-4. If the last CI run (`ci.yml`) on main failed: stop with an error.
+4. If the last finished CI run (`ci.yml`) on main failed: stop with an error. Otherwise the commit that run tested is
+   the one that gets the version, so a tag never points at a commit that didn't pass CI.
 5. Pick the version from the subjects since `last` (`bump` other than `auto` picks the number by hand):
    - any `type!:` or `BREAKING` → `MAJOR+1` → **release**
    - else any `feat:` → `MINOR+1` → **release**
@@ -217,6 +218,7 @@ hand** (Actions ▸ Version ▸ Run workflow, with `bump`: `auto`, `major`, `min
 online is still open; package managers (AUR, Flatpak, F-Droid) update by themselves.
 
 **The first release, 1.0.0, is made by hand.** No tags exist yet, and commits before this file was adopted have no
-type. When the first version is ready, the owner pushes the tag `v1.0.0` (`git tag v1.0.0 && git push origin v1.0.0`),
-or, once `version.yml` exists, runs it by hand with `bump: major`: counting from 0.0.0 over all history, that makes
-`v1.0.0`. From then on, everything above is automatic.
+type. When the first version is ready, the owner runs the version workflow by hand with `bump: major`
+(Actions ▸ version ▸ Run workflow, or `gh workflow run version.yml -f bump=major`): counting from 0.0.0 over all
+history, that makes `v1.0.0`. Until then, automatic runs only say there's no release yet and stop. From then on,
+everything above is automatic.
