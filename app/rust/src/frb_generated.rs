@@ -246,7 +246,7 @@ fn wire__crate__api__uft__send_files_impl(
             let mut deserializer =
                 flutter_rust_bridge::for_generated::SseDeserializer::new(message);
             let api_peer = <crate::api::uft::Peer>::sse_decode(&mut deserializer);
-            let api_paths = <Vec<String>>::sse_decode(&mut deserializer);
+            let api_picks = <Vec<crate::api::uft::Pick>>::sse_decode(&mut deserializer);
             let api_sink = <StreamSink<
                 crate::api::uft::Outgoing,
                 flutter_rust_bridge::for_generated::SseCodec,
@@ -254,7 +254,7 @@ fn wire__crate__api__uft__send_files_impl(
             deserializer.end();
             move |context| {
                 transform_result_sse::<_, String>((move || {
-                    let output_ok = crate::api::uft::send_files(api_peer, api_paths, api_sink)?;
+                    let output_ok = crate::api::uft::send_files(api_peer, api_picks, api_sink)?;
                     std::result::Result::Ok(output_ok)
                 })())
             }
@@ -403,18 +403,6 @@ impl SseDecode for crate::api::uft::Incoming {
     }
 }
 
-impl SseDecode for Vec<String> {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
-        let mut len_ = <i32>::sse_decode(deserializer);
-        let mut ans_ = Vec::with_capacity(len_ as usize);
-        for idx_ in 0..len_ {
-            ans_.push(<String>::sse_decode(deserializer));
-        }
-        return ans_;
-    }
-}
-
 impl SseDecode for Vec<crate::api::uft::Peer> {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
@@ -422,6 +410,18 @@ impl SseDecode for Vec<crate::api::uft::Peer> {
         let mut ans_ = Vec::with_capacity(len_ as usize);
         for idx_ in 0..len_ {
             ans_.push(<crate::api::uft::Peer>::sse_decode(deserializer));
+        }
+        return ans_;
+    }
+}
+
+impl SseDecode for Vec<crate::api::uft::Pick> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut len_ = <i32>::sse_decode(deserializer);
+        let mut ans_ = Vec::with_capacity(len_ as usize);
+        for idx_ in 0..len_ {
+            ans_.push(<crate::api::uft::Pick>::sse_decode(deserializer));
         }
         return ans_;
     }
@@ -448,6 +448,17 @@ impl SseDecode for crate::api::uft::Me {
             name: var_name,
             fingerprint: var_fingerprint,
         };
+    }
+}
+
+impl SseDecode for Option<String> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        if (<bool>::sse_decode(deserializer)) {
+            return Some(<String>::sse_decode(deserializer));
+        } else {
+            return None;
+        }
     }
 }
 
@@ -522,6 +533,18 @@ impl SseDecode for crate::api::uft::Peer {
             fingerprint: var_fingerprint,
             addr: var_addr,
             code: var_code,
+        };
+    }
+}
+
+impl SseDecode for crate::api::uft::Pick {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_path = <String>::sse_decode(deserializer);
+        let mut var_name = <Option<String>>::sse_decode(deserializer);
+        return crate::api::uft::Pick {
+            path: var_path,
+            name: var_name,
         };
     }
 }
@@ -749,6 +772,22 @@ impl flutter_rust_bridge::IntoIntoDart<crate::api::uft::Peer> for crate::api::uf
         self
     }
 }
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::api::uft::Pick {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.path.into_into_dart().into_dart(),
+            self.name.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive for crate::api::uft::Pick {}
+impl flutter_rust_bridge::IntoIntoDart<crate::api::uft::Pick> for crate::api::uft::Pick {
+    fn into_into_dart(self) -> crate::api::uft::Pick {
+        self
+    }
+}
 
 impl SseEncode for flutter_rust_bridge::for_generated::anyhow::Error {
     // Codec=Sse (Serialization based), see doc to use other codecs
@@ -880,22 +919,22 @@ impl SseEncode for crate::api::uft::Incoming {
     }
 }
 
-impl SseEncode for Vec<String> {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
-        <i32>::sse_encode(self.len() as _, serializer);
-        for item in self {
-            <String>::sse_encode(item, serializer);
-        }
-    }
-}
-
 impl SseEncode for Vec<crate::api::uft::Peer> {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
         <i32>::sse_encode(self.len() as _, serializer);
         for item in self {
             <crate::api::uft::Peer>::sse_encode(item, serializer);
+        }
+    }
+}
+
+impl SseEncode for Vec<crate::api::uft::Pick> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <i32>::sse_encode(self.len() as _, serializer);
+        for item in self {
+            <crate::api::uft::Pick>::sse_encode(item, serializer);
         }
     }
 }
@@ -915,6 +954,16 @@ impl SseEncode for crate::api::uft::Me {
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
         <String>::sse_encode(self.name, serializer);
         <String>::sse_encode(self.fingerprint, serializer);
+    }
+}
+
+impl SseEncode for Option<String> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <bool>::sse_encode(self.is_some(), serializer);
+        if let Some(value) = self {
+            <String>::sse_encode(value, serializer);
+        }
     }
 }
 
@@ -981,6 +1030,14 @@ impl SseEncode for crate::api::uft::Peer {
         <String>::sse_encode(self.fingerprint, serializer);
         <String>::sse_encode(self.addr, serializer);
         <String>::sse_encode(self.code, serializer);
+    }
+}
+
+impl SseEncode for crate::api::uft::Pick {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <String>::sse_encode(self.path, serializer);
+        <Option<String>>::sse_encode(self.name, serializer);
     }
 }
 

@@ -55,16 +55,19 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   Incoming dco_decode_incoming(dynamic raw);
 
   @protected
-  List<String> dco_decode_list_String(dynamic raw);
+  List<Peer> dco_decode_list_peer(dynamic raw);
 
   @protected
-  List<Peer> dco_decode_list_peer(dynamic raw);
+  List<Pick> dco_decode_list_pick(dynamic raw);
 
   @protected
   Uint8List dco_decode_list_prim_u_8_strict(dynamic raw);
 
   @protected
   Me dco_decode_me(dynamic raw);
+
+  @protected
+  String? dco_decode_opt_String(dynamic raw);
 
   @protected
   double? dco_decode_opt_box_autoadd_f_64(dynamic raw);
@@ -74,6 +77,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   Peer dco_decode_peer(dynamic raw);
+
+  @protected
+  Pick dco_decode_pick(dynamic raw);
 
   @protected
   int dco_decode_u_32(dynamic raw);
@@ -88,19 +94,13 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   AnyhowException sse_decode_AnyhowException(SseDeserializer deserializer);
 
   @protected
-  RustStreamSink<Incoming> sse_decode_StreamSink_incoming_Sse(
-    SseDeserializer deserializer,
-  );
+  RustStreamSink<Incoming> sse_decode_StreamSink_incoming_Sse(SseDeserializer deserializer);
 
   @protected
-  RustStreamSink<List<Peer>> sse_decode_StreamSink_list_peer_Sse(
-    SseDeserializer deserializer,
-  );
+  RustStreamSink<List<Peer>> sse_decode_StreamSink_list_peer_Sse(SseDeserializer deserializer);
 
   @protected
-  RustStreamSink<Outgoing> sse_decode_StreamSink_outgoing_Sse(
-    SseDeserializer deserializer,
-  );
+  RustStreamSink<Outgoing> sse_decode_StreamSink_outgoing_Sse(SseDeserializer deserializer);
 
   @protected
   String sse_decode_String(SseDeserializer deserializer);
@@ -124,16 +124,19 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   Incoming sse_decode_incoming(SseDeserializer deserializer);
 
   @protected
-  List<String> sse_decode_list_String(SseDeserializer deserializer);
+  List<Peer> sse_decode_list_peer(SseDeserializer deserializer);
 
   @protected
-  List<Peer> sse_decode_list_peer(SseDeserializer deserializer);
+  List<Pick> sse_decode_list_pick(SseDeserializer deserializer);
 
   @protected
   Uint8List sse_decode_list_prim_u_8_strict(SseDeserializer deserializer);
 
   @protected
   Me sse_decode_me(SseDeserializer deserializer);
+
+  @protected
+  String? sse_decode_opt_String(SseDeserializer deserializer);
 
   @protected
   double? sse_decode_opt_box_autoadd_f_64(SseDeserializer deserializer);
@@ -143,6 +146,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   Peer sse_decode_peer(SseDeserializer deserializer);
+
+  @protected
+  Pick sse_decode_pick(SseDeserializer deserializer);
 
   @protected
   int sse_decode_u_32(SseDeserializer deserializer);
@@ -157,16 +163,10 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   int sse_decode_i_32(SseDeserializer deserializer);
 
   @protected
-  void sse_encode_AnyhowException(
-    AnyhowException self,
-    SseSerializer serializer,
-  );
+  void sse_encode_AnyhowException(AnyhowException self, SseSerializer serializer);
 
   @protected
-  void sse_encode_StreamSink_incoming_Sse(
-    RustStreamSink<Incoming> self,
-    SseSerializer serializer,
-  );
+  void sse_encode_StreamSink_incoming_Sse(RustStreamSink<Incoming> self, SseSerializer serializer);
 
   @protected
   void sse_encode_StreamSink_list_peer_Sse(
@@ -175,10 +175,7 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
-  void sse_encode_StreamSink_outgoing_Sse(
-    RustStreamSink<Outgoing> self,
-    SseSerializer serializer,
-  );
+  void sse_encode_StreamSink_outgoing_Sse(RustStreamSink<Outgoing> self, SseSerializer serializer);
 
   @protected
   void sse_encode_String(String self, SseSerializer serializer);
@@ -202,19 +199,19 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   void sse_encode_incoming(Incoming self, SseSerializer serializer);
 
   @protected
-  void sse_encode_list_String(List<String> self, SseSerializer serializer);
-
-  @protected
   void sse_encode_list_peer(List<Peer> self, SseSerializer serializer);
 
   @protected
-  void sse_encode_list_prim_u_8_strict(
-    Uint8List self,
-    SseSerializer serializer,
-  );
+  void sse_encode_list_pick(List<Pick> self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_list_prim_u_8_strict(Uint8List self, SseSerializer serializer);
 
   @protected
   void sse_encode_me(Me self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_opt_String(String? self, SseSerializer serializer);
 
   @protected
   void sse_encode_opt_box_autoadd_f_64(double? self, SseSerializer serializer);
@@ -224,6 +221,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   void sse_encode_peer(Peer self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_pick(Pick self, SseSerializer serializer);
 
   @protected
   void sse_encode_u_32(int self, SseSerializer serializer);
@@ -245,10 +245,8 @@ class RustLibWire implements BaseWire {
       RustLibWire(lib.ffiDynamicLibrary);
 
   /// Holds the symbol lookup function.
-  final ffi.Pointer<T> Function<T extends ffi.NativeType>(String symbolName)
-  _lookup;
+  final ffi.Pointer<T> Function<T extends ffi.NativeType>(String symbolName) _lookup;
 
   /// The symbols are looked up in [dynamicLibrary].
-  RustLibWire(ffi.DynamicLibrary dynamicLibrary)
-    : _lookup = dynamicLibrary.lookup;
+  RustLibWire(ffi.DynamicLibrary dynamicLibrary) : _lookup = dynamicLibrary.lookup;
 }

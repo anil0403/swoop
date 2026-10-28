@@ -303,12 +303,28 @@ pub enum Outgoing {
     },
 }
 
+/// A file or folder to send. `name` set = one file offered under that relative name
+/// (Android's picked files, which arrive as `/proc/self/fd/N`).
+pub struct Pick {
+    pub path: String,
+    pub name: Option<String>,
+}
+
 /// Sends files and folders to `peer`; reports progress, then Done or Failed.
-pub fn send_files(peer: Peer, paths: Vec<String>, sink: StreamSink<Outgoing>) -> Result<(), String> {
+pub fn send_files(peer: Peer, picks: Vec<Pick>, sink: StreamSink<Outgoing>) -> Result<(), String> {
     let st = state()?;
     let addr: SocketAddr = peer.addr.parse().map_err(|e| format!("{}: {e}", peer.addr))?;
     thread::spawn(move || {
-        let sources: Vec<Source> = paths.into_iter().map(|p| Source::Path(p.into())).collect();
+        let sources: Vec<Source> = picks
+            .into_iter()
+            .map(|p| match p.name {
+                Some(name) => Source::Named {
+                    path: p.path.into(),
+                    name,
+                },
+                None => Source::Path(p.path.into()),
+            })
+            .collect();
         let opts = SendOptions {
             streams: Streams::Auto,
             name: st.name.clone(),

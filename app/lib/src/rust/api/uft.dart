@@ -18,27 +18,19 @@ Future<Me> init({required String configDir, required String name}) =>
     RustLib.instance.api.crateApiUftInit(configDir: configDir, name: name);
 
 /// Scans for `secs`, sending the whole list of other devices each time it changes.
-Stream<List<Peer>> scan({required int secs}) =>
-    RustLib.instance.api.crateApiUftScan(secs: secs);
+Stream<List<Peer>> scan({required int secs}) => RustLib.instance.api.crateApiUftScan(secs: secs);
 
 /// Receives into `dir` and makes this device discoverable, until the app exits.
 Stream<Incoming> receive({required String dir}) =>
     RustLib.instance.api.crateApiUftReceive(dir: dir);
 
 /// The user's answer to an `Incoming::Offer`; `always` also trusts the device from now on.
-void answer({
-  required PlatformInt64 id,
-  required bool accept,
-  required bool always,
-}) => RustLib.instance.api.crateApiUftAnswer(
-  id: id,
-  accept: accept,
-  always: always,
-);
+void answer({required PlatformInt64 id, required bool accept, required bool always}) =>
+    RustLib.instance.api.crateApiUftAnswer(id: id, accept: accept, always: always);
 
 /// Sends files and folders to `peer`; reports progress, then Done or Failed.
-Stream<Outgoing> sendFiles({required Peer peer, required List<String> paths}) =>
-    RustLib.instance.api.crateApiUftSendFiles(peer: peer, paths: paths);
+Stream<Outgoing> sendFiles({required Peer peer, required List<Pick> picks}) =>
+    RustLib.instance.api.crateApiUftSendFiles(peer: peer, picks: picks);
 
 @freezed
 sealed class Incoming with _$Incoming {
@@ -71,10 +63,8 @@ sealed class Incoming with _$Incoming {
     required PlatformInt64 bytes,
     required double secs,
   }) = Incoming_Done;
-  const factory Incoming.failed({
-    required PlatformInt64 session,
-    required String error,
-  }) = Incoming_Failed;
+  const factory Incoming.failed({required PlatformInt64 session, required String error}) =
+      Incoming_Failed;
 }
 
 class Me {
@@ -138,11 +128,7 @@ class Peer {
 
   @override
   int get hashCode =>
-      name.hashCode ^
-      os.hashCode ^
-      fingerprint.hashCode ^
-      addr.hashCode ^
-      code.hashCode;
+      name.hashCode ^ os.hashCode ^ fingerprint.hashCode ^ addr.hashCode ^ code.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -154,4 +140,21 @@ class Peer {
           fingerprint == other.fingerprint &&
           addr == other.addr &&
           code == other.code;
+}
+
+/// A file or folder to send. `name` set = one file offered under that relative name
+/// (Android's picked files, which arrive as `/proc/self/fd/N`).
+class Pick {
+  final String path;
+  final String? name;
+
+  const Pick({required this.path, this.name});
+
+  @override
+  int get hashCode => path.hashCode ^ name.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is Pick && runtimeType == other.runtimeType && path == other.path && name == other.name;
 }
