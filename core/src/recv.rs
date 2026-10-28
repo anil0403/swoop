@@ -355,8 +355,16 @@ fn at(path: &Path) -> impl Fn(io::Error) -> io::Error + '_ {
     move |e| io::Error::new(e.kind(), format!("{}: {e}", path.display()))
 }
 
+// Android shared storage (FUSE) sometimes fails to open a directory that exists;
+// a full sync() is slower but just as safe.
 fn syncfs(dir: &Path) -> io::Result<()> {
-    rustix::fs::syncfs(File::open(dir).map_err(at(dir))?).map_err(|e| at(dir)(e.into()))
+    match File::open(dir) {
+        Ok(f) => rustix::fs::syncfs(f).map_err(|e| at(dir)(e.into())),
+        Err(_) => {
+            rustix::fs::sync();
+            Ok(())
+        }
+    }
 }
 
 fn open_part(t: &Target) -> io::Result<File> {
