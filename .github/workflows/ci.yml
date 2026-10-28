@@ -1,0 +1,46 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+
+defaults:
+  run:
+    shell: bash
+    working-directory: core
+
+jobs:
+  linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: core
+      - run: cargo build --locked
+      - run: cargo test --locked
+      - run: cargo clippy --locked --all-targets
+      - run: cargo fmt --check
+      # ponytail: informational only; a hard >5% regression gate needs stable self-hosted hardware.
+      - name: bench
+        run: |
+          cargo build --release --locked
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          ./target/release/uft bench --size 2G | tee -a "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+
+  android:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: core
+          key: android
+      - run: ANDROID_NDK_HOME="$ANDROID_NDK_LATEST_HOME" ../scripts/build-android.sh aarch64-linux-android
