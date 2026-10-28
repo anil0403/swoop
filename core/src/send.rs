@@ -98,10 +98,13 @@ pub fn send(
         },
     )?;
     ctrl.flush()?;
+    // The receiver may be asking its user.
+    ctrl.sock.set_read_timeout(Some(Duration::from_secs(120)))?;
     let have = match proto::read_msg(&mut ctrl)? {
         Msg::Accept { have } => have,
         m => return Err(refused(m)),
     };
+    ctrl.sock.set_read_timeout(Some(Duration::from_secs(30)))?;
     let (work, resumed) = plan(&files, &have);
     let job = Job {
         items,
