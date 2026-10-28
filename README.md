@@ -8,7 +8,7 @@ Status: the transfer engine and the `uft` command work; the Linux and Android ap
 ## Install
 
 One line, from the newest [release](https://github.com/anil0403/ultra-fast-data-transfer/releases) (no root;
-there is no release yet: the first one is tagged by hand, see [VERSIONING.md](VERSIONING.md)).
+there is no release yet: the first one is started by hand, see [VERSIONING.md](VERSIONING.md)).
 
 Linux (x86_64 or aarch64, glibc 2.35+), into `~/.local/bin`. Run it again to update:
 
