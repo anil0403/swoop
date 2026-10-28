@@ -129,11 +129,11 @@ return failed(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeWhen<TResult extends Object?>({TResult Function( PlatformInt64 id,  String peerName,  PlatformInt64 files,  PlatformInt64 total,  String code)?  offer,TResult Function( PlatformInt64 session,  String peerName,  PlatformInt64 files,  PlatformInt64 total,  PlatformInt64 resumed)?  started,TResult Function( PlatformInt64 session,  PlatformInt64 done,  PlatformInt64 total,  double speed,  double? eta)?  progress,TResult Function( PlatformInt64 session,  PlatformInt64 bytes,  double secs)?  done,TResult Function( PlatformInt64 session,  String error)?  failed,required TResult orElse(),}) {final _that = this;
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>({TResult Function( PlatformInt64 id,  String peerName,  String fingerprint,  PlatformInt64 files,  PlatformInt64 total,  String code)?  offer,TResult Function( PlatformInt64 session,  String peerName,  String fingerprint,  PlatformInt64 files,  PlatformInt64 total,  PlatformInt64 resumed)?  started,TResult Function( PlatformInt64 session,  PlatformInt64 done,  PlatformInt64 total,  double speed,  double? eta)?  progress,TResult Function( PlatformInt64 session,  PlatformInt64 bytes,  double secs)?  done,TResult Function( PlatformInt64 session,  String error)?  failed,required TResult orElse(),}) {final _that = this;
 switch (_that) {
 case Incoming_Offer() when offer != null:
-return offer(_that.id,_that.peerName,_that.files,_that.total,_that.code);case Incoming_Started() when started != null:
-return started(_that.session,_that.peerName,_that.files,_that.total,_that.resumed);case Incoming_Progress() when progress != null:
+return offer(_that.id,_that.peerName,_that.fingerprint,_that.files,_that.total,_that.code);case Incoming_Started() when started != null:
+return started(_that.session,_that.peerName,_that.fingerprint,_that.files,_that.total,_that.resumed);case Incoming_Progress() when progress != null:
 return progress(_that.session,_that.done,_that.total,_that.speed,_that.eta);case Incoming_Done() when done != null:
 return done(_that.session,_that.bytes,_that.secs);case Incoming_Failed() when failed != null:
 return failed(_that.session,_that.error);case _:
@@ -154,11 +154,11 @@ return failed(_that.session,_that.error);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult when<TResult extends Object?>({required TResult Function( PlatformInt64 id,  String peerName,  PlatformInt64 files,  PlatformInt64 total,  String code)  offer,required TResult Function( PlatformInt64 session,  String peerName,  PlatformInt64 files,  PlatformInt64 total,  PlatformInt64 resumed)  started,required TResult Function( PlatformInt64 session,  PlatformInt64 done,  PlatformInt64 total,  double speed,  double? eta)  progress,required TResult Function( PlatformInt64 session,  PlatformInt64 bytes,  double secs)  done,required TResult Function( PlatformInt64 session,  String error)  failed,}) {final _that = this;
+@optionalTypeArgs TResult when<TResult extends Object?>({required TResult Function( PlatformInt64 id,  String peerName,  String fingerprint,  PlatformInt64 files,  PlatformInt64 total,  String code)  offer,required TResult Function( PlatformInt64 session,  String peerName,  String fingerprint,  PlatformInt64 files,  PlatformInt64 total,  PlatformInt64 resumed)  started,required TResult Function( PlatformInt64 session,  PlatformInt64 done,  PlatformInt64 total,  double speed,  double? eta)  progress,required TResult Function( PlatformInt64 session,  PlatformInt64 bytes,  double secs)  done,required TResult Function( PlatformInt64 session,  String error)  failed,}) {final _that = this;
 switch (_that) {
 case Incoming_Offer():
-return offer(_that.id,_that.peerName,_that.files,_that.total,_that.code);case Incoming_Started():
-return started(_that.session,_that.peerName,_that.files,_that.total,_that.resumed);case Incoming_Progress():
+return offer(_that.id,_that.peerName,_that.fingerprint,_that.files,_that.total,_that.code);case Incoming_Started():
+return started(_that.session,_that.peerName,_that.fingerprint,_that.files,_that.total,_that.resumed);case Incoming_Progress():
 return progress(_that.session,_that.done,_that.total,_that.speed,_that.eta);case Incoming_Done():
 return done(_that.session,_that.bytes,_that.secs);case Incoming_Failed():
 return failed(_that.session,_that.error);}
@@ -175,11 +175,11 @@ return failed(_that.session,_that.error);}
 /// }
 /// ```
 
-@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>({TResult? Function( PlatformInt64 id,  String peerName,  PlatformInt64 files,  PlatformInt64 total,  String code)?  offer,TResult? Function( PlatformInt64 session,  String peerName,  PlatformInt64 files,  PlatformInt64 total,  PlatformInt64 resumed)?  started,TResult? Function( PlatformInt64 session,  PlatformInt64 done,  PlatformInt64 total,  double speed,  double? eta)?  progress,TResult? Function( PlatformInt64 session,  PlatformInt64 bytes,  double secs)?  done,TResult? Function( PlatformInt64 session,  String error)?  failed,}) {final _that = this;
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>({TResult? Function( PlatformInt64 id,  String peerName,  String fingerprint,  PlatformInt64 files,  PlatformInt64 total,  String code)?  offer,TResult? Function( PlatformInt64 session,  String peerName,  String fingerprint,  PlatformInt64 files,  PlatformInt64 total,  PlatformInt64 resumed)?  started,TResult? Function( PlatformInt64 session,  PlatformInt64 done,  PlatformInt64 total,  double speed,  double? eta)?  progress,TResult? Function( PlatformInt64 session,  PlatformInt64 bytes,  double secs)?  done,TResult? Function( PlatformInt64 session,  String error)?  failed,}) {final _that = this;
 switch (_that) {
 case Incoming_Offer() when offer != null:
-return offer(_that.id,_that.peerName,_that.files,_that.total,_that.code);case Incoming_Started() when started != null:
-return started(_that.session,_that.peerName,_that.files,_that.total,_that.resumed);case Incoming_Progress() when progress != null:
+return offer(_that.id,_that.peerName,_that.fingerprint,_that.files,_that.total,_that.code);case Incoming_Started() when started != null:
+return started(_that.session,_that.peerName,_that.fingerprint,_that.files,_that.total,_that.resumed);case Incoming_Progress() when progress != null:
 return progress(_that.session,_that.done,_that.total,_that.speed,_that.eta);case Incoming_Done() when done != null:
 return done(_that.session,_that.bytes,_that.secs);case Incoming_Failed() when failed != null:
 return failed(_that.session,_that.error);case _:
@@ -194,11 +194,12 @@ return failed(_that.session,_that.error);case _:
 
 
 class Incoming_Offer extends Incoming {
-  const Incoming_Offer({required this.id, required this.peerName, required this.files, required this.total, required this.code}): super._();
+  const Incoming_Offer({required this.id, required this.peerName, required this.fingerprint, required this.files, required this.total, required this.code}): super._();
   
 
  final  PlatformInt64 id;
  final  String peerName;
+ final  String fingerprint;
  final  PlatformInt64 files;
  final  PlatformInt64 total;
  final  String code;
@@ -213,18 +214,18 @@ $Incoming_OfferCopyWith<Incoming_Offer> get copyWith => _$Incoming_OfferCopyWith
 
 @override
 bool operator ==(Object other) {
-    return identical(this, other) || (other.runtimeType == runtimeType&&other is Incoming_Offer&&(identical(other.id, id) || other.id == id)&&(identical(other.peerName, peerName) || other.peerName == peerName)&&(identical(other.files, files) || other.files == files)&&(identical(other.total, total) || other.total == total)&&(identical(other.code, code) || other.code == code));
+    return identical(this, other) || (other.runtimeType == runtimeType&&other is Incoming_Offer&&(identical(other.id, id) || other.id == id)&&(identical(other.peerName, peerName) || other.peerName == peerName)&&(identical(other.fingerprint, fingerprint) || other.fingerprint == fingerprint)&&(identical(other.files, files) || other.files == files)&&(identical(other.total, total) || other.total == total)&&(identical(other.code, code) || other.code == code));
 }
 
 
 @override
 int get hashCode {
-    return Object.hash(runtimeType,id,peerName,files,total,code);
+    return Object.hash(runtimeType,id,peerName,fingerprint,files,total,code);
 }
 
 @override
 String toString() {
-    return 'Incoming.offer(id: $id, peerName: $peerName, files: $files, total: $total, code: $code)';
+    return 'Incoming.offer(id: $id, peerName: $peerName, fingerprint: $fingerprint, files: $files, total: $total, code: $code)';
 }
 
 
@@ -235,7 +236,7 @@ abstract mixin class $Incoming_OfferCopyWith<$Res> implements $IncomingCopyWith<
   factory $Incoming_OfferCopyWith(Incoming_Offer value, $Res Function(Incoming_Offer) _then) = _$Incoming_OfferCopyWithImpl;
 @useResult
 $Res call({
- PlatformInt64 id, String peerName, PlatformInt64 files, PlatformInt64 total, String code
+ PlatformInt64 id, String peerName, String fingerprint, PlatformInt64 files, PlatformInt64 total, String code
 });
 
 
@@ -252,10 +253,11 @@ class _$Incoming_OfferCopyWithImpl<$Res>
 
 /// Create a copy of Incoming
 /// with the given fields replaced by the non-null parameter values.
-@pragma('vm:prefer-inline') $Res call({Object? id = null,Object? peerName = null,Object? files = null,Object? total = null,Object? code = null,}) {
+@pragma('vm:prefer-inline') $Res call({Object? id = null,Object? peerName = null,Object? fingerprint = null,Object? files = null,Object? total = null,Object? code = null,}) {
   return _then(Incoming_Offer(
 id: null == id ? _self.id : id // ignore: cast_nullable_to_non_nullable
 as PlatformInt64,peerName: null == peerName ? _self.peerName : peerName // ignore: cast_nullable_to_non_nullable
+as String,fingerprint: null == fingerprint ? _self.fingerprint : fingerprint // ignore: cast_nullable_to_non_nullable
 as String,files: null == files ? _self.files : files // ignore: cast_nullable_to_non_nullable
 as PlatformInt64,total: null == total ? _self.total : total // ignore: cast_nullable_to_non_nullable
 as PlatformInt64,code: null == code ? _self.code : code // ignore: cast_nullable_to_non_nullable
@@ -270,11 +272,12 @@ as String,
 
 
 class Incoming_Started extends Incoming {
-  const Incoming_Started({required this.session, required this.peerName, required this.files, required this.total, required this.resumed}): super._();
+  const Incoming_Started({required this.session, required this.peerName, required this.fingerprint, required this.files, required this.total, required this.resumed}): super._();
   
 
  final  PlatformInt64 session;
  final  String peerName;
+ final  String fingerprint;
  final  PlatformInt64 files;
  final  PlatformInt64 total;
  final  PlatformInt64 resumed;
@@ -289,18 +292,18 @@ $Incoming_StartedCopyWith<Incoming_Started> get copyWith => _$Incoming_StartedCo
 
 @override
 bool operator ==(Object other) {
-    return identical(this, other) || (other.runtimeType == runtimeType&&other is Incoming_Started&&(identical(other.session, session) || other.session == session)&&(identical(other.peerName, peerName) || other.peerName == peerName)&&(identical(other.files, files) || other.files == files)&&(identical(other.total, total) || other.total == total)&&(identical(other.resumed, resumed) || other.resumed == resumed));
+    return identical(this, other) || (other.runtimeType == runtimeType&&other is Incoming_Started&&(identical(other.session, session) || other.session == session)&&(identical(other.peerName, peerName) || other.peerName == peerName)&&(identical(other.fingerprint, fingerprint) || other.fingerprint == fingerprint)&&(identical(other.files, files) || other.files == files)&&(identical(other.total, total) || other.total == total)&&(identical(other.resumed, resumed) || other.resumed == resumed));
 }
 
 
 @override
 int get hashCode {
-    return Object.hash(runtimeType,session,peerName,files,total,resumed);
+    return Object.hash(runtimeType,session,peerName,fingerprint,files,total,resumed);
 }
 
 @override
 String toString() {
-    return 'Incoming.started(session: $session, peerName: $peerName, files: $files, total: $total, resumed: $resumed)';
+    return 'Incoming.started(session: $session, peerName: $peerName, fingerprint: $fingerprint, files: $files, total: $total, resumed: $resumed)';
 }
 
 
@@ -311,7 +314,7 @@ abstract mixin class $Incoming_StartedCopyWith<$Res> implements $IncomingCopyWit
   factory $Incoming_StartedCopyWith(Incoming_Started value, $Res Function(Incoming_Started) _then) = _$Incoming_StartedCopyWithImpl;
 @useResult
 $Res call({
- PlatformInt64 session, String peerName, PlatformInt64 files, PlatformInt64 total, PlatformInt64 resumed
+ PlatformInt64 session, String peerName, String fingerprint, PlatformInt64 files, PlatformInt64 total, PlatformInt64 resumed
 });
 
 
@@ -328,10 +331,11 @@ class _$Incoming_StartedCopyWithImpl<$Res>
 
 /// Create a copy of Incoming
 /// with the given fields replaced by the non-null parameter values.
-@pragma('vm:prefer-inline') $Res call({Object? session = null,Object? peerName = null,Object? files = null,Object? total = null,Object? resumed = null,}) {
+@pragma('vm:prefer-inline') $Res call({Object? session = null,Object? peerName = null,Object? fingerprint = null,Object? files = null,Object? total = null,Object? resumed = null,}) {
   return _then(Incoming_Started(
 session: null == session ? _self.session : session // ignore: cast_nullable_to_non_nullable
 as PlatformInt64,peerName: null == peerName ? _self.peerName : peerName // ignore: cast_nullable_to_non_nullable
+as String,fingerprint: null == fingerprint ? _self.fingerprint : fingerprint // ignore: cast_nullable_to_non_nullable
 as String,files: null == files ? _self.files : files // ignore: cast_nullable_to_non_nullable
 as PlatformInt64,total: null == total ? _self.total : total // ignore: cast_nullable_to_non_nullable
 as PlatformInt64,resumed: null == resumed ? _self.resumed : resumed // ignore: cast_nullable_to_non_nullable

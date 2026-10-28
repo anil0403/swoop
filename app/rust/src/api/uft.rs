@@ -168,6 +168,7 @@ pub enum Incoming {
     Offer {
         id: i64,
         peer_name: String,
+        fingerprint: String,
         files: i64,
         total: i64,
         code: String,
@@ -175,6 +176,7 @@ pub enum Incoming {
     Started {
         session: i64,
         peer_name: String,
+        fingerprint: String,
         files: i64,
         total: i64,
         resumed: i64,
@@ -233,16 +235,17 @@ fn incoming(ev: RecvEvent, meters: &Mutex<HashMap<u64, Meter>>) -> Incoming {
     match ev {
         RecvEvent::Started {
             session,
+            peer_fp,
             peer_name,
             files,
             total,
             resumed,
-            ..
         } => {
             meters.lock().unwrap().insert(session, Meter::new(total, resumed));
             Incoming::Started {
                 session: session as i64,
                 peer_name,
+                fingerprint: peer_fp,
                 files: files as i64,
                 total: total as i64,
                 resumed: resumed as i64,
@@ -302,6 +305,7 @@ fn ask(o: &Offer, sink: &StreamSink<Incoming>) -> bool {
         .add(Incoming::Offer {
             id,
             peer_name: o.peer_name.clone(),
+            fingerprint: o.peer_fp.clone(),
             files: o.files as i64,
             total: o.total as i64,
             code: pair::code(&st.fp, &o.peer_fp),

@@ -401,12 +401,14 @@ impl SseDecode for crate::api::uft::Incoming {
             0 => {
                 let mut var_id = <i64>::sse_decode(deserializer);
                 let mut var_peerName = <String>::sse_decode(deserializer);
+                let mut var_fingerprint = <String>::sse_decode(deserializer);
                 let mut var_files = <i64>::sse_decode(deserializer);
                 let mut var_total = <i64>::sse_decode(deserializer);
                 let mut var_code = <String>::sse_decode(deserializer);
                 return crate::api::uft::Incoming::Offer {
                     id: var_id,
                     peer_name: var_peerName,
+                    fingerprint: var_fingerprint,
                     files: var_files,
                     total: var_total,
                     code: var_code,
@@ -415,12 +417,14 @@ impl SseDecode for crate::api::uft::Incoming {
             1 => {
                 let mut var_session = <i64>::sse_decode(deserializer);
                 let mut var_peerName = <String>::sse_decode(deserializer);
+                let mut var_fingerprint = <String>::sse_decode(deserializer);
                 let mut var_files = <i64>::sse_decode(deserializer);
                 let mut var_total = <i64>::sse_decode(deserializer);
                 let mut var_resumed = <i64>::sse_decode(deserializer);
                 return crate::api::uft::Incoming::Started {
                     session: var_session,
                     peer_name: var_peerName,
+                    fingerprint: var_fingerprint,
                     files: var_files,
                     total: var_total,
                     resumed: var_resumed,
@@ -691,6 +695,7 @@ impl flutter_rust_bridge::IntoDart for crate::api::uft::Incoming {
             crate::api::uft::Incoming::Offer {
                 id,
                 peer_name,
+                fingerprint,
                 files,
                 total,
                 code,
@@ -698,6 +703,7 @@ impl flutter_rust_bridge::IntoDart for crate::api::uft::Incoming {
                 0.into_dart(),
                 id.into_into_dart().into_dart(),
                 peer_name.into_into_dart().into_dart(),
+                fingerprint.into_into_dart().into_dart(),
                 files.into_into_dart().into_dart(),
                 total.into_into_dart().into_dart(),
                 code.into_into_dart().into_dart(),
@@ -706,6 +712,7 @@ impl flutter_rust_bridge::IntoDart for crate::api::uft::Incoming {
             crate::api::uft::Incoming::Started {
                 session,
                 peer_name,
+                fingerprint,
                 files,
                 total,
                 resumed,
@@ -713,6 +720,7 @@ impl flutter_rust_bridge::IntoDart for crate::api::uft::Incoming {
                 1.into_dart(),
                 session.into_into_dart().into_dart(),
                 peer_name.into_into_dart().into_dart(),
+                fingerprint.into_into_dart().into_dart(),
                 files.into_into_dart().into_dart(),
                 total.into_into_dart().into_dart(),
                 resumed.into_into_dart().into_dart(),
@@ -934,6 +942,7 @@ impl SseEncode for crate::api::uft::Incoming {
             crate::api::uft::Incoming::Offer {
                 id,
                 peer_name,
+                fingerprint,
                 files,
                 total,
                 code,
@@ -941,6 +950,7 @@ impl SseEncode for crate::api::uft::Incoming {
                 <i32>::sse_encode(0, serializer);
                 <i64>::sse_encode(id, serializer);
                 <String>::sse_encode(peer_name, serializer);
+                <String>::sse_encode(fingerprint, serializer);
                 <i64>::sse_encode(files, serializer);
                 <i64>::sse_encode(total, serializer);
                 <String>::sse_encode(code, serializer);
@@ -948,6 +958,7 @@ impl SseEncode for crate::api::uft::Incoming {
             crate::api::uft::Incoming::Started {
                 session,
                 peer_name,
+                fingerprint,
                 files,
                 total,
                 resumed,
@@ -955,6 +966,7 @@ impl SseEncode for crate::api::uft::Incoming {
                 <i32>::sse_encode(1, serializer);
                 <i64>::sse_encode(session, serializer);
                 <String>::sse_encode(peer_name, serializer);
+                <String>::sse_encode(fingerprint, serializer);
                 <i64>::sse_encode(files, serializer);
                 <i64>::sse_encode(total, serializer);
                 <i64>::sse_encode(resumed, serializer);
