@@ -88,6 +88,59 @@ fn peer(f: &Found, me: &str) -> Peer {
     }
 }
 
+/// This device as `uft://IP:PORT/FINGERPRINT`, one per local network: what to type on a device that can't find it.
+#[flutter_rust_bridge::frb(sync)]
+pub fn my_links() -> Result<Vec<String>, String> {
+    let fp = &state()?.fp;
+    Ok(discover::local_ips()
+        .iter()
+        .map(|ip| format!("uft://{ip}:{DEFAULT_PORT}/{fp}"))
+        .collect())
+}
+
+/// A device scanning can't find: a `uft://HOST:PORT/FINGERPRINT` link (taken as is), or an `IP[:PORT]`
+/// (asked who it is, ~2 s).
+pub fn connect(target: String) -> Result<Peer, String> {
+    let me = &state()?.fp;
+    let target = target.trim();
+    let with_port = |h: &str| -> Result<SocketAddr, String> {
+        h.parse::<SocketAddr>()
+            .or_else(|_| h.parse::<Ipv4Addr>().map(|ip| SocketAddr::from((ip, DEFAULT_PORT))))
+            .map_err(|_| format!("{h:?} is not an address like 192.168.1.20"))
+    };
+    if let Some(link) = target.strip_prefix("uft://") {
+        let (host, fp) = link
+            .trim_end_matches('/')
+            .rsplit_once('/')
+            .filter(|(_, f)| f.len() == 64 && f.bytes().all(|b| b.is_ascii_hexdigit()))
+            .ok_or("bad link: expected uft://HOST:PORT/FINGERPRINT")?;
+        let fp = fp.to_ascii_lowercase();
+        return Ok(Peer {
+            name: host.to_string(),
+            os: String::new(),
+            code: pair::code(me, &fp),
+            fingerprint: fp,
+            addr: with_port(host)?.to_string(),
+        });
+    }
+    let addr = with_port(target)?;
+    let std::net::IpAddr::V4(ip) = addr.ip() else {
+        return Err("only IPv4 addresses for now".into());
+    };
+    let found = discover::scan(addr.port(), Duration::from_secs(2), &[ip], |f| {
+        f.addrs.iter().any(|a| a.ip() == addr.ip())
+    })
+    .map_err(|e| e.to_string())?;
+    found
+        .iter()
+        .find(|f| f.device.fp != *me && f.addrs.iter().any(|a| a.ip() == addr.ip()))
+        .map(|f| Peer {
+            addr: addr.to_string(),
+            ..peer(f, me)
+        })
+        .ok_or_else(|| format!("no uft device answered at {addr}; is it receiving?"))
+}
+
 /// Scans for `secs`, sending the whole list of other devices each time it changes.
 pub fn scan(secs: u32, sink: StreamSink<Vec<Peer>>) -> Result<(), String> {
     let me = state()?.fp.clone();

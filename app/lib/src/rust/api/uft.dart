@@ -17,6 +17,14 @@ part 'uft.freezed.dart';
 Future<Me> init({required String configDir, required String name}) =>
     RustLib.instance.api.crateApiUftInit(configDir: configDir, name: name);
 
+/// This device as `uft://IP:PORT/FINGERPRINT`, one per local network: what to type on a device that can't find it.
+List<String> myLinks() => RustLib.instance.api.crateApiUftMyLinks();
+
+/// A device scanning can't find: a `uft://HOST:PORT/FINGERPRINT` link (taken as is), or an `IP[:PORT]`
+/// (asked who it is, ~2 s).
+Future<Peer> connect({required String target}) =>
+    RustLib.instance.api.crateApiUftConnect(target: target);
+
 /// Scans for `secs`, sending the whole list of other devices each time it changes.
 Stream<List<Peer>> scan({required int secs}) => RustLib.instance.api.crateApiUftScan(secs: secs);
 
