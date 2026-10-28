@@ -14,6 +14,7 @@ use uft::tls::Identity;
 
 const USAGE: &str = "usage:
   uft id                                   print this device's fingerprint
+  uft version                              print the version
   uft recv [--dir D] [--port P] [--null]   listen for transfers
   uft send HOST[:PORT] FINGERPRINT PATH... [--streams auto|N]
   uft send HOST[:PORT] FINGERPRINT --synthetic SIZE [--streams auto|N]
@@ -23,6 +24,7 @@ SIZE: bytes or K/M/G/T suffix (1024-based)";
 #[derive(Debug, PartialEq)]
 enum Cmd {
     Help,
+    Version,
     Id,
     Recv {
         dir: PathBuf,
@@ -133,6 +135,7 @@ fn parse_args(args: &[String]) -> Result<Cmd, String> {
     };
     match cmd.as_str() {
         "-h" | "--help" | "help" => Ok(Cmd::Help),
+        "version" | "--version" | "-V" => no_pos(Cmd::Version),
         "id" => no_pos(Cmd::Id),
         "recv" => no_pos(Cmd::Recv {
             dir: PathBuf::from(get("--dir").unwrap_or(".")),
@@ -288,6 +291,7 @@ fn summary(s: &SendStats) -> String {
 fn run(cmd: Cmd) -> Res<()> {
     match cmd {
         Cmd::Help => println!("{USAGE}"),
+        Cmd::Version => println!("uft {}", env!("CARGO_PKG_VERSION")),
         Cmd::Id => println!("{}", identity()?.fingerprint()),
         Cmd::Recv { dir, port, null } => {
             let id = identity()?;
@@ -448,6 +452,7 @@ mod tests {
         assert_eq!(parse_args(&[]), Ok(Cmd::Help));
         assert_eq!(parse_args(&args("recv --help")), Ok(Cmd::Help));
         assert_eq!(parse_args(&args("id")), Ok(Cmd::Id));
+        assert_eq!(parse_args(&args("--version")), Ok(Cmd::Version));
         assert_eq!(
             parse_args(&args("recv")),
             Ok(Cmd::Recv {
