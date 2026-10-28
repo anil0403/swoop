@@ -24,7 +24,22 @@ pub struct RecvOptions {
     pub null_sink: bool,
     /// Device name shown to senders.
     pub name: String,
+    /// Asked before each offer is planned. None = accept every offer. May block (e.g. to
+    /// ask the user) for up to ~2 minutes; the sender waits that long.
+    pub accept: Option<Accept>,
 }
+
+/// What a sender offers, as shown to the `accept` callback.
+#[derive(Debug, Clone)]
+pub struct Offer {
+    pub peer_fp: String,
+    pub peer_name: String,
+    pub files: usize,
+    pub total: u64,
+}
+
+/// Returns whether to accept an offer.
+pub type Accept = Arc<dyn Fn(&Offer) -> bool + Send + Sync>;
 
 #[derive(Debug, Clone)]
 pub enum RecvEvent {
@@ -57,8 +72,8 @@ const MIN_CHUNK: u64 = 64 << 10;
 const MAX_CHUNKS: u64 = 1 << 26;
 const POOL: usize = 5;
 
-/// Accepts connections forever, one thread per connection. Sessions are accepted
-/// automatically (pairing comes in phase 2).
+/// Accepts connections forever, one thread per connection. Each offer goes to
+/// `opts.accept` first, if set.
 pub fn serve(
     listener: TcpListener,
     id: Arc<Identity>,
@@ -90,6 +105,7 @@ struct Ctx {
     dir: PathBuf,
     null_sink: bool,
     name: String,
+    accept: Option<Accept>,
     caps: Caps,
     sessions: Mutex<HashMap<u64, Arc<Session>>>,
     on_event: Box<dyn Fn(RecvEvent) + Send + Sync>,
@@ -105,6 +121,7 @@ impl Ctx {
             dir: opts.dir,
             null_sink: opts.null_sink,
             name: opts.name,
+            accept: opts.accept,
             caps,
             sessions: Mutex::new(HashMap::new()),
             on_event: Box::new(on_event),
@@ -533,6 +550,19 @@ fn control<S: Read + Write>(
     let Msg::Offer { chunk_size, files } = proto::read_msg(&mut s)? else {
         return Err(bad("expected offer"));
     };
+    let total = files.iter().map(|f| f.size).fold(0u64, u64::saturating_add);
+    if let Some(accept) = &ctx.accept {
+        let offer = Offer {
+            peer_fp: peer_fp.clone(),
+            peer_name: peer_name.clone(),
+            files: files.len(),
+            total,
+        };
+        if !accept(&offer) {
+            let reason = "declined by receiver".into();
+            return send(&mut s, &Msg::Reject { reason });
+        }
+    }
     let (sess, have, now) = match plan(ctx, peer_fp.clone(), chunk_size, &files) {
         Ok(p) => p,
         Err(reason) => return send(&mut s, &Msg::Reject { reason }),
@@ -543,7 +573,6 @@ fn control<S: Read + Write>(
         .enumerate()
         .map(|(f, h)| h.iter().map(|&i| sess.chunk_len(f, i)).sum::<u64>())
         .sum();
-    let total = files.iter().map(|f| f.size).fold(0u64, u64::saturating_add);
     {
         // Registered before Accept so the sender's data connections never race us.
         let mut reg = ctx.sessions.lock().unwrap();
@@ -720,6 +749,14 @@ mod tests {
 
     /// Plain-TCP receiver; events go to the returned channel.
     fn start(dir: &Path, null_sink: bool) -> (SocketAddr, Receiver<RecvEvent>) {
+        start_with(dir, null_sink, None)
+    }
+
+    fn start_with(
+        dir: &Path,
+        null_sink: bool,
+        accept: Option<Accept>,
+    ) -> (SocketAddr, Receiver<RecvEvent>) {
         let l = TcpListener::bind("127.0.0.1:0").unwrap();
         let addr = l.local_addr().unwrap();
         let (tx, rx) = channel();
@@ -727,6 +764,7 @@ mod tests {
             dir: dir.into(),
             null_sink,
             name: "rx".into(),
+            accept,
         };
         let ctx = Arc::new(Ctx::new(opts, caps(), move |e| {
             let _ = tx.send(e);
@@ -897,6 +935,31 @@ mod tests {
             offer(addr, 5, CS, &[f("x", 1), f("x", 1)]).1,
             Msg::Reject { .. }
         ));
+        assert!(!dir.exists());
+    }
+
+    #[test]
+    fn declined_offer_is_rejected() {
+        let dir = tmp("decline");
+        let seen = Arc::new(Mutex::new(None));
+        let s = seen.clone();
+        let accept: Accept = Arc::new(move |o: &Offer| {
+            *s.lock().unwrap() = Some(o.clone());
+            false
+        });
+        let (addr, _rx) = start_with(&dir, false, Some(accept));
+        let reply = offer(addr, 12, CS, &[f("a", 10), f("b/c", 5)]).1;
+        assert_eq!(
+            reply,
+            Msg::Reject {
+                reason: "declined by receiver".into()
+            }
+        );
+        let o = seen.lock().unwrap().take().unwrap();
+        assert_eq!(
+            (o.peer_fp.as_str(), o.peer_name.as_str(), o.files, o.total),
+            ("peer", "tx", 2, 15)
+        );
         assert!(!dir.exists());
     }
 

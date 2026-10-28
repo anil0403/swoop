@@ -305,6 +305,7 @@ fn run(cmd: Cmd) -> Res<()> {
                 dir,
                 null_sink: null,
                 name: device_name(),
+                accept: None,
             };
             recv::serve(listener, Arc::new(id), opts, print_event)?;
         }
@@ -344,6 +345,7 @@ fn run(cmd: Cmd) -> Res<()> {
                 dir: PathBuf::new(),
                 null_sink: true,
                 name: "bench-recv".into(),
+                accept: None,
             };
             std::thread::spawn(move || {
                 if let Err(e) = recv::serve(listener, Arc::new(rx), opts, |_| {}) {

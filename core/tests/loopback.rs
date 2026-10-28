@@ -35,6 +35,7 @@ fn receiver(dir: &Path, null_sink: bool) -> (SocketAddr, String) {
         dir: dir.to_path_buf(),
         null_sink,
         name: "rx".into(),
+        accept: None,
     };
     std::thread::spawn(move || recv::serve(listener, id, opts, |_| {}));
     (addr, fp)
