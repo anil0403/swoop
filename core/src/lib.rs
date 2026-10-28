@@ -4,3 +4,9 @@
 pub const VERSION: u32 = 1;
 /// Default listen port; discovery's subnet sweep probes this.
 pub const DEFAULT_PORT: u16 = 47474;
+
+pub mod progress;
+pub mod proto;
+pub mod recv;
+pub mod send;
+pub mod tls;
