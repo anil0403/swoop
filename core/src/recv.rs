@@ -336,7 +336,8 @@ impl Session {
                 chunk_size: self.chunk_size,
                 done: done.clone(),
             };
-            fs::write(t.state_path(), serde_json::to_vec(&ps)?)?;
+            let sp = t.state_path();
+            fs::write(&sp, serde_json::to_vec(&ps)?).map_err(at(&sp))?;
         }
         // A file finalized meanwhile must not keep the state we just wrote.
         let st = self.st.lock().unwrap();
@@ -349,8 +350,13 @@ impl Session {
     }
 }
 
+/// Puts the path into an I/O error, so "No such file or directory" says which.
+fn at(path: &Path) -> impl Fn(io::Error) -> io::Error + '_ {
+    move |e| io::Error::new(e.kind(), format!("{}: {e}", path.display()))
+}
+
 fn syncfs(dir: &Path) -> io::Result<()> {
-    Ok(rustix::fs::syncfs(File::open(dir)?)?)
+    rustix::fs::syncfs(File::open(dir).map_err(at(dir))?).map_err(|e| at(dir)(e.into()))
 }
 
 fn open_part(t: &Target) -> io::Result<File> {
@@ -361,7 +367,8 @@ fn open_part(t: &Target) -> io::Result<File> {
         .write(true)
         .create(true)
         .truncate(false)
-        .open(&t.part)?;
+        .open(&t.part)
+        .map_err(at(&t.part))?;
     if f.metadata()?.len() < t.size {
         use rustix::io::Errno;
         match rustix::fs::fallocate(&f, rustix::fs::FallocateFlags::empty(), 0, t.size) {
@@ -382,7 +389,8 @@ fn finalize(t: &Target) -> io::Result<()> {
         .write(true)
         .create(true)
         .truncate(false)
-        .open(&t.part)?;
+        .open(&t.part)
+        .map_err(at(&t.part))?;
     if f.metadata()?.len() != t.size {
         f.set_len(t.size)?;
     }
@@ -403,7 +411,7 @@ fn finalize(t: &Target) -> io::Result<()> {
         }
         dest = numbered(&t.dest, n);
     }
-    fs::rename(&t.part, &dest)?;
+    fs::rename(&t.part, &dest).map_err(at(&dest))?;
     match fs::remove_file(t.state_path()) {
         Err(e) if e.kind() != io::ErrorKind::NotFound => Err(e),
         _ => Ok(()),
