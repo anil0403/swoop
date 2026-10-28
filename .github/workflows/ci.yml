@@ -24,6 +24,7 @@ jobs:
       - run: cargo test --locked
       - run: cargo clippy --locked --all-targets
       - run: cargo fmt --check
+      - run: ../.github/test-next-version.sh
       # ponytail: informational only; a hard >5% regression gate needs stable self-hosted hardware.
       - name: bench
         run: |
