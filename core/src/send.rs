@@ -21,6 +21,9 @@ use std::time::{Duration, Instant};
 pub enum Source {
     /// A file, or a directory sent recursively under its own name.
     Path(PathBuf),
+    /// One file read from `path` but offered as `name` (a relative path like `album/a.jpg`).
+    /// Android hands picked files over as `/proc/self/fd/N`, which carry no useful name.
+    Named { path: PathBuf, name: String },
     /// Generated in memory, never touches disk (benchmarks).
     Synthetic { name: String, size: u64 },
 }
@@ -328,6 +331,20 @@ fn collect(sources: &[Source]) -> io::Result<Vec<Item>> {
                 },
                 src: None,
             }),
+            Source::Named { path, name } => {
+                let md = fs::metadata(path)?;
+                if !md.is_file() {
+                    return Err(bad(&format!("{name}: not a file")));
+                }
+                out.push(Item {
+                    entry: FileEntry {
+                        path: name.clone(),
+                        size: md.len(),
+                        mtime: md.mtime(),
+                    },
+                    src: Some(path.clone()),
+                });
+            }
             Source::Path(p) => {
                 let name = match p.file_name() {
                     Some(n) => n.to_owned(),
@@ -441,6 +458,27 @@ mod tests {
         assert!(items[0].entry.mtime > 0);
         assert_eq!((items[3].entry.mtime, items[3].src.is_none()), (0, true));
         fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn named_file_from_fd_path() {
+        let path = std::env::temp_dir().join(format!("uft-fd-{}", proto::random_u64()));
+        fs::write(&path, "hello").unwrap();
+        let f = File::open(&path).unwrap();
+        let fd = PathBuf::from(format!(
+            "/proc/self/fd/{}",
+            std::os::fd::AsRawFd::as_raw_fd(&f)
+        ));
+        let items = collect(&[Source::Named {
+            path: fd,
+            name: "album/hi.txt".into(),
+        }])
+        .unwrap();
+        assert_eq!(
+            (items[0].entry.path.as_str(), items[0].entry.size),
+            ("album/hi.txt", 5)
+        );
+        fs::remove_file(path).unwrap();
     }
 
     #[test]
