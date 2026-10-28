@@ -45,3 +45,25 @@ jobs:
           workspaces: core
           key: android
       - run: ANDROID_NDK_HOME="$ANDROID_NDK_LATEST_HOME" ../scripts/build-android.sh aarch64-linux-android
+
+  app:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: app
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: app/rust
+      - run: sudo apt-get update -q && sudo apt-get install -yq clang cmake ninja-build pkg-config libgtk-3-dev
+      - run: echo "version=$(cat .flutter-version)" >> "$GITHUB_OUTPUT"
+        id: flutter
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ steps.flutter.outputs.version }}
+          cache: true
+      - run: flutter analyze
+      - run: flutter test
+      - run: flutter build linux --release
