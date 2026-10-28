@@ -293,7 +293,7 @@ fn read_chunks(job: &Job, tx: SyncSender<Chunk>, pool: Receiver<Vec<u8>>) -> io:
             None => {}
             Some(path) => {
                 if open.as_ref().is_none_or(|(f, _)| *f != file) {
-                    let f = File::open(path)?;
+                    let f = open_src(path)?;
                     let _ = rustix::fs::fadvise(&f, 0, None, rustix::fs::Advice::Sequential);
                     open = Some((file, f));
                 }
@@ -311,6 +311,21 @@ fn read_chunks(job: &Job, tx: SyncSender<Chunk>, pool: Receiver<Vec<u8>>) -> io:
         }
     }
     Ok(())
+}
+
+/// Opens a file to send. `/proc/self/fd/N` is duplicated, not reopened: Android hands picked files over
+/// as descriptors the app may have no right to reopen by path.
+fn open_src(path: &Path) -> io::Result<File> {
+    let fd = path
+        .to_str()
+        .and_then(|p| p.strip_prefix("/proc/self/fd/")?.parse().ok());
+    match fd {
+        // SAFETY: only dup()ed here; a closed or bogus number fails with EBADF.
+        Some(fd) => Ok(unsafe { std::os::fd::BorrowedFd::borrow_raw(fd) }
+            .try_clone_to_owned()?
+            .into()),
+        None => File::open(path),
+    }
 }
 
 /// An offered file and where its bytes come from (None = synthetic).
@@ -332,7 +347,7 @@ fn collect(sources: &[Source]) -> io::Result<Vec<Item>> {
                 src: None,
             }),
             Source::Named { path, name } => {
-                let md = fs::metadata(path)?;
+                let md = open_src(path)?.metadata()?;
                 if !md.is_file() {
                     return Err(bad(&format!("{name}: not a file")));
                 }
