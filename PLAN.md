@@ -123,6 +123,32 @@ Every device is the same peer: announces itself, listens while receiving is enab
 - [ ] 4.6 Real phones: all 4 pairings at ≥95% of iperf3 (needs the Phase 0 numbers), API 26 and latest; Wi-Fi without internet; hotspot (the phone hosting it while also on Wi-Fi is not handled yet).
 - [ ] 4.7 Later: Share-to-uft intent, progress in the notification, media scan for Android 8–10 (Gallery), cancel, keep transferring after the app is swiped away, app icon and name.
 
+## Phase 5 tasks: no shared network (direct link)
+Flow: every app advertises over Bluetooth LE while open. A device seen only over BLE shows up in the list; tapping it
+→ pick files → the **sender hosts** a hotspot (Android LocalOnlyHotspot, Linux NetworkManager) → writes an invite to the
+receiver over BLE → the receiver confirms once (name + code) and joins → normal discovery finds it on the new network →
+the transfer runs over TLS as usual (the invited offer is accepted without a second prompt) → both sides undo the
+network change. Sender: tap device, pick. Receiver: one tap (Android 10+ adds the system "Connect" dialog).
+
+BLE contract (both platforms):
+- Service `b7e3c1a0-5d2f-4e8b-9c61-2a4f8d0e7b10`; advertising carries service data for it = the first 8 bytes of the
+  device fingerprint (16 hex chars decoded), connectable; the device name in the scan response (may be truncated).
+- Invite characteristic `b7e3c1a1-5d2f-4e8b-9c61-2a4f8d0e7b10`, write with response, value = UTF-8 JSON
+  `{"v":1,"ssid":..,"pass":..,"sec":"wpa2"|"wpa3t"|"wpa3","fp":<sender fingerprint>,"name":<sender name>}`
+  (≤ 240 bytes; the client asks for a large MTU, the server also accepts long/offset writes).
+- The platform layer moves the JSON as an opaque string; the Dart app builds and parses it.
+- ponytail: Wi-Fi credentials go over BLE unencrypted; they only open a short-lived hotspot, and the transfer itself is
+  pinned TLS with the code shown on both sides. Encrypt the invite (fingerprint-derived key) if that ever matters.
+
+- [ ] 5.1 Linux platform side (`app/rust/src/api/direct.rs`, BlueZ via `bluer`, NetworkManager via `nmcli`).
+- [ ] 5.2 Android platform side (`MainActivity.kt` + `Direct.kt`): BLE advertise/scan/GATT, LocalOnlyHotspot, join
+  (`WifiNetworkSpecifier` on 10+, `addNetwork` on 8–9), permissions.
+- [ ] 5.3 App flow (`app/lib`): BLE-only devices in the list, host → invite → wait → send → tear down; invite dialog.
+- [ ] 5.4 Tests: Linux↔Linux on virtual radios (mac80211_hwsim, virtual BLE controllers); Android↔Android on two emulators;
+  real devices (all 4 pairings) with no router.
+- [ ] 5.5 Later: Wi-Fi Direct (when neither side can host), the receiver hosting when the sender can't, 5/6 GHz band choice
+  from link info, QR code instead of BLE for devices without Bluetooth.
+
 ## Release tasks (Phase 7, see VERSIONING.md)
 - [x] 7.1 `release.yml`: on each `v*` tag, `uft` tarballs (Linux x86_64 + aarch64, Android aarch64) and `SHA256SUMS`; one-line install commands in README.
 - [x] 7.2 Flutter Linux app inside the Linux tarballs (`lib/uft/`, `bin/uft-app`, `share/applications/uft.desktop`), so the same one-liner installs it.
