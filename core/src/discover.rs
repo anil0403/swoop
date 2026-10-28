@@ -216,6 +216,11 @@ fn parse(b: &[u8]) -> Option<Device> {
     }
 }
 
+/// This device's IPv4 addresses that discovery uses (for links and QR codes).
+pub fn local_ips() -> Vec<Ipv4Addr> {
+    interfaces().into_iter().map(|i| i.ip).collect()
+}
+
 struct Iface {
     ip: Ipv4Addr,
     prefix: u8,

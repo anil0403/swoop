@@ -1,25 +1,33 @@
 use std::error::Error;
 use std::ffi::OsString;
-use std::io::Write;
-use std::net::{IpAddr, SocketAddr, TcpListener, ToSocketAddrs};
+use std::io::{IsTerminal, Write};
+use std::net::{IpAddr, Ipv4Addr, SocketAddr, TcpListener, ToSocketAddrs, UdpSocket};
 use std::path::PathBuf;
 use std::process::ExitCode;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
 use uft::DEFAULT_PORT;
+use uft::discover::{self, Device, Found};
+use uft::pair::{self, Trust};
 use uft::progress::Snapshot;
-use uft::recv::{self, RecvEvent, RecvOptions};
+use uft::recv::{self, Offer, RecvEvent, RecvOptions};
 use uft::send::{self, SendOptions, SendStats, Source, Streams};
 use uft::tls::Identity;
 
 const USAGE: &str = "usage:
   uft id                                   print this device's fingerprint
   uft version                              print the version
-  uft recv [--dir D] [--port P] [--null]   listen for transfers
-  uft send HOST[:PORT] FINGERPRINT PATH... [--streams auto|N]
-  uft send HOST[:PORT] FINGERPRINT --synthetic SIZE [--streams auto|N]
+  uft recv [--dir D] [--port P] [--null] [--yes]
+                                           receive; nearby devices find this one
+  uft scan [--secs N]                      list receivers nearby
+  uft send DEVICE PATH... [--streams auto|N]
+  uft send DEVICE --synthetic SIZE [--streams auto|N]
   uft bench [--size SIZE] [--streams auto|N]
-SIZE: bytes or K/M/G/T suffix (1024-based)";
+DEVICE: a name or fingerprint prefix from `uft scan`, a HOST[:PORT] (optionally
+        followed by its FINGERPRINT), or a uft:// link printed by `uft recv`
+--yes:  accept every offer (otherwise unknown devices are confirmed with a code)
+SIZE:   bytes or K/M/G/T suffix (1024-based)";
 
 #[derive(Debug, PartialEq)]
 enum Cmd {
@@ -30,10 +38,14 @@ enum Cmd {
         dir: PathBuf,
         port: u16,
         null: bool,
+        yes: bool,
+    },
+    Scan {
+        secs: u64,
     },
     Send {
-        host: String,
-        fp: String,
+        device: String,
+        fp: Option<String>,
         paths: Vec<PathBuf>,
         synthetic: Option<u64>,
         streams: Streams,
@@ -97,8 +109,8 @@ fn parse_args(args: &[String]) -> Result<Cmd, String> {
     while let Some(a) = it.next() {
         match a.as_str() {
             "-h" | "--help" => return Ok(Cmd::Help),
-            "--null" => flags.push(("--null", None)),
-            f @ ("--dir" | "--port" | "--streams" | "--synthetic" | "--size") => {
+            f @ ("--null" | "--yes") => flags.push((f, None)),
+            f @ ("--dir" | "--port" | "--streams" | "--synthetic" | "--size" | "--secs") => {
                 let v = it.next().ok_or(format!("{f} needs a value"))?;
                 flags.push((f, Some(v)));
             }
@@ -107,7 +119,8 @@ fn parse_args(args: &[String]) -> Result<Cmd, String> {
         }
     }
     let allowed: &[&str] = match cmd.as_str() {
-        "recv" => &["--dir", "--port", "--null"],
+        "recv" => &["--dir", "--port", "--null", "--yes"],
+        "scan" => &["--secs"],
         "send" => &["--streams", "--synthetic"],
         "bench" => &["--size", "--streams"],
         _ => &[],
@@ -144,6 +157,16 @@ fn parse_args(args: &[String]) -> Result<Cmd, String> {
                 .transpose()?
                 .unwrap_or(DEFAULT_PORT),
             null: get("--null").is_some(),
+            yes: get("--yes").is_some(),
+        }),
+        "scan" => no_pos(Cmd::Scan {
+            secs: get("--secs")
+                .map(|v| match v.parse() {
+                    Ok(n) if n > 0 => Ok(n),
+                    _ => Err(format!("bad --secs {v:?}")),
+                })
+                .transpose()?
+                .unwrap_or(3),
         }),
         "bench" => no_pos(Cmd::Bench {
             size: get("--size")
@@ -153,12 +176,24 @@ fn parse_args(args: &[String]) -> Result<Cmd, String> {
             streams,
         }),
         "send" => {
-            let [host, fp, paths @ ..] = pos.as_slice() else {
-                return Err("send needs HOST and FINGERPRINT".into());
+            let [device, rest @ ..] = pos.as_slice() else {
+                return Err("send needs a DEVICE".into());
             };
-            let fp = fp.to_ascii_lowercase();
-            if fp.len() != 64 || !fp.bytes().all(|b| b.is_ascii_hexdigit()) {
-                return Err(format!("bad fingerprint {fp:?} (64 hex chars)"));
+            let (mut device, mut fp, mut paths) = (device.to_string(), None, rest);
+            if let [f, p @ ..] = rest
+                && is_fp(f)
+            {
+                fp = Some(f.to_ascii_lowercase());
+                paths = p;
+            }
+            if let Some(link) = device.strip_prefix("uft://") {
+                let (host, f) = link
+                    .trim_end_matches('/')
+                    .rsplit_once('/')
+                    .filter(|(h, f)| !h.is_empty() && is_fp(f) && fp.is_none())
+                    .ok_or_else(|| format!("bad link {device:?} (uft://HOST:PORT/FINGERPRINT)"))?;
+                fp = Some(f.to_ascii_lowercase());
+                device = host.to_string();
             }
             let synthetic = get("--synthetic").map(parse_size).transpose()?;
             if synthetic.is_some() == !paths.is_empty() {
@@ -166,7 +201,7 @@ fn parse_args(args: &[String]) -> Result<Cmd, String> {
             }
             let paths = paths.iter().map(PathBuf::from).collect();
             Ok(Cmd::Send {
-                host: host.to_string(),
+                device,
                 fp,
                 paths,
                 synthetic,
@@ -175,6 +210,10 @@ fn parse_args(args: &[String]) -> Result<Cmd, String> {
         }
         c => Err(format!("unknown command {c:?}")),
     }
+}
+
+fn is_fp(s: &str) -> bool {
+    s.len() == 64 && s.bytes().all(|b| b.is_ascii_hexdigit())
 }
 
 /// `$UFT_HOME`, else `$XDG_CONFIG_HOME/uft`, else `$HOME/.config/uft`. Empty values count as unset.
@@ -202,14 +241,98 @@ fn with_port(host: &str) -> String {
     }
 }
 
-fn identity() -> Res<Identity> {
-    let dir = config_dir(
+fn config() -> Res<PathBuf> {
+    Ok(config_dir(
         std::env::var_os("UFT_HOME"),
         std::env::var_os("XDG_CONFIG_HOME"),
         std::env::var_os("HOME"),
     )
-    .ok_or("no config dir: set UFT_HOME or HOME")?;
+    .ok_or("no config dir: set UFT_HOME or HOME")?)
+}
+
+fn identity() -> Res<Identity> {
+    let dir = config()?;
     Identity::load_or_create(&dir).map_err(|e| format!("identity in {}: {e}", dir.display()).into())
+}
+
+/// Finds DEVICE: a host with a given fingerprint as is, otherwise by a scan that matches the
+/// name, a fingerprint prefix or the host's address. Returns the best address, fingerprint, name.
+fn resolve(device: &str, fp: Option<String>) -> Res<(SocketAddr, String, String)> {
+    if let Some(fp) = fp {
+        let addr = with_port(device)
+            .to_socket_addrs()?
+            .next()
+            .ok_or_else(|| format!("{device}: no address"))?;
+        return Ok((addr, fp, device.into()));
+    }
+    // Only look up what looks like a host: an offline DNS lookup of a plain name can hang.
+    let hosts: Vec<SocketAddr> = if device.parse::<IpAddr>().is_ok() || device.contains(['.', ':'])
+    {
+        with_port(device)
+            .to_socket_addrs()
+            .map(|a| a.collect())
+            .unwrap_or_default()
+    } else {
+        Vec::new()
+    };
+    let port = hosts.first().map_or(DEFAULT_PORT, |a| a.port());
+    let v4: Vec<Ipv4Addr> = hosts
+        .iter()
+        .filter_map(|a| match a.ip() {
+            IpAddr::V4(ip) => Some(ip),
+            IpAddr::V6(_) => None,
+        })
+        .collect();
+    let want = device.to_ascii_lowercase();
+    let is_match = |f: &Found| {
+        f.device.name.eq_ignore_ascii_case(device)
+            || (want.len() >= 4 && f.device.fp.starts_with(&want))
+            || f.addrs
+                .iter()
+                .any(|a| hosts.iter().any(|h| h.ip() == a.ip()))
+    };
+    let found = discover::scan(port, Duration::from_secs(5), &v4, |f| is_match(f))?;
+    let f = found.iter().find(|f| is_match(f)).ok_or_else(|| {
+        format!("no device {device:?} found nearby; see `uft scan`, or give HOST FINGERPRINT")
+    })?;
+    Ok((f.addrs[0], f.device.fp.clone(), f.device.name.clone()))
+}
+
+/// Asks on the terminal whether to accept an offer from a device that isn't trusted yet.
+fn confirm(o: &Offer, me: &str, trust: &Mutex<Trust>) -> bool {
+    // Holding the lock also keeps two prompts from mixing.
+    let mut trust = trust.lock().unwrap();
+    if trust.contains(&o.peer_fp) {
+        return true;
+    }
+    if !std::io::stdin().is_terminal() {
+        eprintln!(
+            "uft: declined {} from {}: not trusted yet (confirm in a terminal, or use --yes)",
+            human(o.total),
+            o.peer_name
+        );
+        return false;
+    }
+    eprint!(
+        "\n{} wants to send {} files, {}. Pairing code {} (the sender shows it too).\n\
+         Accept? [y]es, [a]lways from this device, [N]o: ",
+        o.peer_name,
+        o.files,
+        human(o.total),
+        pair::code(me, &o.peer_fp)
+    );
+    let mut line = String::new();
+    let _ = std::io::stdin().read_line(&mut line);
+    match line.trim().to_ascii_lowercase().as_str() {
+        "y" | "yes" => true,
+        "a" | "always" => {
+            if let Err(e) = trust.add(&o.peer_fp, &o.peer_name) {
+                eprintln!("uft: could not save trust: {e}");
+            }
+            true
+        }
+        _ => false,
+    }
 }
 
 fn device_name() -> String {
@@ -293,34 +416,85 @@ fn run(cmd: Cmd) -> Res<()> {
         Cmd::Help => println!("{USAGE}"),
         Cmd::Version => println!("uft {}", env!("CARGO_PKG_VERSION")),
         Cmd::Id => println!("{}", identity()?.fingerprint()),
-        Cmd::Recv { dir, port, null } => {
+        Cmd::Recv {
+            dir,
+            port,
+            null,
+            yes,
+        } => {
             let id = identity()?;
+            let (fp, name) = (id.fingerprint(), device_name());
             let listener = TcpListener::bind(("0.0.0.0", port))?;
-            println!(
-                "listening on {}  fingerprint {}",
-                listener.local_addr()?,
-                id.fingerprint()
-            );
+            let port = listener.local_addr()?.port();
+            println!("receiving as {name:?} on port {port}, fingerprint {fp}");
+            for ip in discover::local_ips() {
+                println!("  link: uft://{ip}:{port}/{fp}");
+            }
+            let me = Device {
+                fp: fp.clone(),
+                name: name.clone(),
+                os: std::env::consts::OS.into(),
+                port,
+            };
+            match UdpSocket::bind((Ipv4Addr::UNSPECIFIED, port)) {
+                Ok(sock) => {
+                    std::thread::spawn(move || {
+                        if let Err(e) = discover::respond(sock, &me) {
+                            eprintln!("uft: discovery stopped: {e}");
+                        }
+                    });
+                }
+                Err(e) => eprintln!("uft: not discoverable (UDP {port}: {e}); senders need a link"),
+            }
+            let accept: Option<recv::Accept> = if yes {
+                None
+            } else {
+                let trust = Mutex::new(Trust::load(&config()?)?);
+                let fp = fp.clone();
+                Some(Arc::new(move |o: &Offer| confirm(o, &fp, &trust)))
+            };
             let opts = RecvOptions {
                 dir,
                 null_sink: null,
-                name: device_name(),
-                accept: None,
+                name,
+                accept,
             };
             recv::serve(listener, Arc::new(id), opts, print_event)?;
         }
+        Cmd::Scan { secs } => {
+            let me = identity()?.fingerprint();
+            let found = discover::scan(DEFAULT_PORT, Duration::from_secs(secs), &[], |_| false)?;
+            if found.is_empty() {
+                println!(
+                    "no devices found: run `uft recv` on the other device, on the same network"
+                );
+            }
+            for f in &found {
+                let d = &f.device;
+                let addrs: Vec<String> = f.addrs.iter().map(|a| a.to_string()).collect();
+                let this = if d.fp == me { "  (this device)" } else { "" };
+                println!(
+                    "{:<24} {:<8} {}  {}{this}",
+                    d.name,
+                    d.os,
+                    &d.fp[..12],
+                    addrs.join(" ")
+                );
+            }
+        }
         Cmd::Send {
-            host,
+            device,
             fp,
             paths,
             synthetic,
             streams,
         } => {
-            let target = with_port(&host);
-            let addr = target
-                .to_socket_addrs()?
-                .next()
-                .ok_or_else(|| format!("{host}: no address"))?;
+            let id = identity()?;
+            let (addr, fp, name) = resolve(&device, fp)?;
+            eprintln!(
+                "to {name} at {addr}, pairing code {}",
+                pair::code(&id.fingerprint(), &fp)
+            );
             let sources: Vec<Source> = match synthetic {
                 Some(size) => vec![Source::Synthetic {
                     name: "synthetic.bin".into(),
@@ -332,7 +506,7 @@ fn run(cmd: Cmd) -> Res<()> {
                 streams,
                 name: device_name(),
             };
-            let stats = send::send(addr, &identity()?, &fp, &sources, &opts, print_status)?;
+            let stats = send::send(addr, &id, &fp, &sources, &opts, print_status)?;
             eprintln!();
             println!("{}", summary(&stats));
         }
@@ -460,15 +634,17 @@ mod tests {
             Ok(Cmd::Recv {
                 dir: ".".into(),
                 port: DEFAULT_PORT,
-                null: false
+                null: false,
+                yes: false
             })
         );
         assert_eq!(
-            parse_args(&args("recv --null --port 9 --dir /tmp")),
+            parse_args(&args("recv --null --port 9 --dir /tmp --yes")),
             Ok(Cmd::Recv {
                 dir: "/tmp".into(),
                 port: 9,
-                null: true
+                null: true,
+                yes: true
             })
         );
         assert_eq!(
@@ -491,8 +667,8 @@ mod tests {
                 FP.to_uppercase()
             ))),
             Ok(Cmd::Send {
-                host: "h:1".into(),
-                fp: FP.into(),
+                device: "h:1".into(),
+                fp: Some(FP.into()),
                 paths: vec!["a".into(), "b".into()],
                 synthetic: None,
                 streams: Streams::Auto
@@ -501,10 +677,31 @@ mod tests {
         assert_eq!(
             parse_args(&args(&format!("send h {FP} --synthetic 1M"))),
             Ok(Cmd::Send {
-                host: "h".into(),
-                fp: FP.into(),
+                device: "h".into(),
+                fp: Some(FP.into()),
                 paths: vec![],
                 synthetic: Some(1 << 20),
+                streams: Streams::Auto
+            })
+        );
+        assert_eq!(parse_args(&args("scan")), Ok(Cmd::Scan { secs: 3 }));
+        assert_eq!(
+            parse_args(&args("send phone a")),
+            Ok(Cmd::Send {
+                device: "phone".into(),
+                fp: None,
+                paths: vec!["a".into()],
+                synthetic: None,
+                streams: Streams::Auto
+            })
+        );
+        assert_eq!(
+            parse_args(&args(&format!("send uft://10.0.0.2:9/{FP}/ a"))),
+            Ok(Cmd::Send {
+                device: "10.0.0.2:9".into(),
+                fp: Some(FP.into()),
+                paths: vec!["a".into()],
+                synthetic: None,
                 streams: Streams::Auto
             })
         );
@@ -516,8 +713,13 @@ mod tests {
             "recv --size 1G".into(),
             "bench --streams 0".into(),
             "bench --frobnicate".into(),
+            "send".into(),
             "send h".into(),
-            "send h abc x".into(),
+            "send uft://h/abc a".into(),
+            format!("send uft:///{FP} a"),
+            format!("send uft://h/{FP} {FP} a"),
+            "scan --secs 0".into(),
+            "scan --yes".into(),
             format!("send h {FP}"),
             format!("send h {FP} a --synthetic 1G"),
         ] {
