@@ -73,8 +73,54 @@ jobs:
           name: ${{ matrix.name }}
           path: dist/${{ matrix.name }}.tar.gz
 
+  apk:
+    runs-on: ubuntu-latest
+    environment: release
+    defaults:
+      run:
+        working-directory: app
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TAG }}
+      - if: env.TAG != ''
+        run: ../.github/set-version.sh "$TAG"
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android,armv7-linux-androideabi,x86_64-linux-android
+      - run: echo "version=$(cat .flutter-version)" >> "$GITHUB_OUTPUT"
+        id: flutter
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ steps.flutter.outputs.version }}
+      - name: build
+        env:
+          KEYSTORE: ${{ secrets.ANDROID_KEYSTORE }}
+          UFT_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          UFT_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          UFT_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          # No key, no APK: one signed with a throwaway key could never be updated by the next release.
+          if [[ -z $KEYSTORE ]]; then
+            echo "::warning::no ANDROID_KEYSTORE secret; the release has no APK (see VERSIONING.md)"
+            exit 0
+          fi
+          export UFT_KEYSTORE=$RUNNER_TEMP/release.jks
+          base64 -d <<< "$KEYSTORE" > "$UFT_KEYSTORE"
+          flutter build apk --release
+          mkdir -p ../dist && cp build/app/outputs/flutter-apk/app-release.apk ../dist/uft-android.apk
+      - uses: actions/upload-artifact@v4
+        with:
+          name: uft-android-apk
+          path: dist/uft-android.apk
+          if-no-files-found: ignore
+
   publish:
-    needs: build
+    needs: [build, apk]
     if: github.event_name == 'push' || inputs.tag != ''
     runs-on: ubuntu-latest
     environment: release
@@ -89,7 +135,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
         run: |
-          sha256sum *.tar.gz > SHA256SUMS
+          sha256sum * > SHA256SUMS
           pre=""
           [[ $TAG == *-* ]] && pre=--prerelease
           gh release view "$TAG" > /dev/null 2>&1 ||

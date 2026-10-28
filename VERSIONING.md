@@ -202,11 +202,17 @@ hand** (Actions ▸ version ▸ Run workflow, with `bump`: `auto`, `major`, `min
 
 1. Set the version from the tag with `set-version.sh` (a beta is only a tag, so this happens at build time and isn't
    committed).
-2. Build, each packed as a tarball that unpacks into a prefix (`bin/uft`):
-   - **Linux:** `uft-linux-x86_64.tar.gz`, `uft-linux-aarch64.tar.gz` (glibc 2.35 and newer).
-   - **Android:** `uft-android-aarch64.tar.gz` (the `uft` command, for Termux).
-   - **Later:** the Flutter Linux app goes into the Linux tarballs (same names), and the Android app ships as
-     `uft-android.apk`, signed (Phases 3, 4 and 7 in [`PLAN.md`](PLAN.md)).
+2. Build:
+   - **Linux:** `uft-linux-x86_64.tar.gz`, `uft-linux-aarch64.tar.gz` (glibc 2.35 and newer), each unpacking into
+     a prefix: `bin/uft`, the app (`bin/uft-app`, `lib/uft/`) and `share/applications/uft.desktop`.
+   - **Android:** `uft-android.apk` (the app; arm64, armv7 and x86_64), and `uft-android-aarch64.tar.gz` (the
+     `uft` command, for Termux).
+   - **APK signing:** with the release key from the repository secrets `ANDROID_KEYSTORE` (the `.jks` file,
+     base64), `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS` and `ANDROID_KEY_PASSWORD`, added by the owner.
+     Without them the release has no APK: Android only installs an update signed with the same key, so the key
+     must stay the same forever, and never be in the repository. To make one (keep it and its passwords safe):
+     `keytool -genkeypair -v -keystore uft-release.jks -keyalg RSA -keysize 4096 -validity 36500 -alias uft`,
+     then `base64 -w0 uft-release.jks` is the value of `ANDROID_KEYSTORE`.
 3. Upload (after the owner approves, if the `release` environment has required reviewers) the files and
    `SHA256SUMS` to the GitHub release, making a draft first if `version.yml` didn't.
 4. Publish the draft. A release is marked "latest"; a beta never is, and stays a pre-release. The install commands
