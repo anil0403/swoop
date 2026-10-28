@@ -97,6 +97,9 @@ pub fn server_config(id: &Identity) -> io::Result<Arc<ServerConfig>> {
         .with_single_cert(vec![id.cert.clone()], id.key.clone_key())
         .map_err(io::Error::other)?;
     cfg.ignore_client_order = !has_aes();
+    // No resumption tickets: senders never read data streams, and unread bytes at close
+    // make the kernel send RST, which drops the tail of the stream.
+    cfg.send_tls13_tickets = 0;
     Ok(Arc::new(cfg))
 }
 
