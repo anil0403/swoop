@@ -71,6 +71,9 @@ class HomeState extends State<Home> {
   uft.Me? me;
   String? dir, error;
   List<uft.Peer> peers = [];
+
+  /// Added by address or link; kept across rescans.
+  final manual = <uft.Peer>[];
   final transfers = <Transfer>[];
   final incoming = <int, Transfer>{};
   bool scanning = false, busy = false;
@@ -310,12 +313,73 @@ class HomeState extends State<Home> {
         );
   }
 
+  /// For networks where scanning can't reach: shows this device's links, takes the other one's.
+  Future<void> connectByAddress() async {
+    final field = TextEditingController();
+    final target = await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Connect by address'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('On the other device, type one of these:'),
+            for (final l in uft.myLinks()) SelectableText(l, style: const TextStyle(fontSize: 12)),
+            const SizedBox(height: 16),
+            TextField(
+              controller: field,
+              autofocus: true,
+              decoration: const InputDecoration(
+                labelText: "The other device's address or uft:// link",
+                hintText: '192.168.1.20',
+              ),
+              onSubmitted: (v) => Navigator.pop(context, v),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, field.text),
+            child: const Text('Connect'),
+          ),
+        ],
+      ),
+    );
+    if (target == null || target.trim().isEmpty) return;
+    try {
+      await addPeer(target);
+    } catch (e) {
+      setState(() => error = '$e');
+    }
+  }
+
+  /// Adds the device at `target` (an address or a uft:// link) to the list.
+  Future<uft.Peer> addPeer(String target) async {
+    final p = await uft.connect(target: target);
+    setState(() {
+      error = null;
+      manual
+        ..removeWhere((m) => m.fingerprint == p.fingerprint)
+        ..add(p);
+    });
+    return p;
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     return Scaffold(
       appBar: AppBar(
         title: Text(me == null ? 'uft' : 'uft · ${me!.name}'),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.add_link),
+            tooltip: 'Connect by address',
+            onPressed: me == null ? null : connectByAddress,
+          ),
+        ],
         bottom: scanning
             ? const PreferredSize(
                 preferredSize: Size.fromHeight(2),
@@ -335,12 +399,15 @@ class HomeState extends State<Home> {
             Text('Visible to nearby devices · saving to $dir', style: theme.textTheme.bodySmall),
           const SizedBox(height: 16),
           Text('Nearby devices', style: theme.textTheme.titleMedium),
-          if (peers.isEmpty)
+          if (peers.isEmpty && manual.isEmpty)
             const Padding(
               padding: EdgeInsets.symmetric(vertical: 16),
               child: Text('Looking for devices on this network… Open uft on the other device.'),
             ),
-          for (final p in peers)
+          for (final p in [
+            ...peers,
+            ...manual.where((m) => !peers.any((p) => p.fingerprint == m.fingerprint)),
+          ])
             Card(
               child: ListTile(
                 leading: Icon(p.os == 'android' ? Icons.phone_android : Icons.computer),
