@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:uft/src/rust/api/uft.dart' as uft;
 import 'package:uft/src/rust/frb_generated.dart';
@@ -35,6 +36,9 @@ class Transfer {
   String? result;
   bool failed = false;
 }
+
+/// Android side (MainActivity.kt): device name, save folder, file picking, power locks.
+const android = MethodChannel('uft');
 
 String size(num b) {
   const units = ['B', 'KB', 'MB', 'GB', 'TB'];
@@ -69,7 +73,7 @@ class HomeState extends State<Home> {
   List<uft.Peer> peers = [];
   final transfers = <Transfer>[];
   final incoming = <int, Transfer>{};
-  bool scanning = false;
+  bool scanning = false, busy = false;
   Timer? rescan;
 
   @override
@@ -87,9 +91,15 @@ class HomeState extends State<Home> {
   Future<void> start() async {
     try {
       final config = await getApplicationSupportDirectory();
-      final downloads = await getDownloadsDirectory() ?? await getApplicationDocumentsDirectory();
-      final d = '${downloads.path}/uft';
-      final m = await uft.init(configDir: config.path, name: Platform.localHostname);
+      final String d, name;
+      if (Platform.isAndroid) {
+        final info = (await android.invokeMapMethod<String, String>('info'))!;
+        (d, name) = (info['downloads']!, info['name']!);
+      } else {
+        final downloads = await getDownloadsDirectory() ?? await getApplicationDocumentsDirectory();
+        (d, name) = ('${downloads.path}/uft', Platform.localHostname);
+      }
+      final m = await uft.init(configDir: config.path, name: name);
       setState(() {
         me = m;
         dir = d;
@@ -167,6 +177,7 @@ class HomeState extends State<Home> {
           );
         }
     }
+    updateBusy();
   }
 
   Future<void> offer(uft.Incoming_Offer o) async {
@@ -228,19 +239,45 @@ class HomeState extends State<Home> {
       ),
     );
     if (folder == null) return;
-    final paths = folder
-        ? [?await getDirectoryPath()]
-        : (await openFiles()).map((f) => f.path).toList();
-    if (paths.isNotEmpty) send(p, paths);
+    final List<uft.Pick> picks;
+    if (Platform.isAndroid) {
+      // [fd path, name] pairs; the descriptors stay open until the send ends.
+      final got = await android.invokeListMethod<List<Object?>>('pick', folder) ?? [];
+      picks = [for (final x in got) uft.Pick(path: x[0] as String, name: x[1] as String)];
+    } else {
+      final paths = folder
+          ? [?await getDirectoryPath()]
+          : (await openFiles()).map((f) => f.path).toList();
+      picks = [for (final x in paths) uft.Pick(path: x)];
+    }
+    if (picks.isNotEmpty) send(p, picks);
   }
 
-  void send(uft.Peer p, List<String> paths) {
-    final t = Transfer(
-      'To ${p.name} · ${paths.length == 1 ? paths.first.split('/').last : '${paths.length} items'}',
-    );
+  /// Tells Android while something transfers, so it keeps the CPU and Wi-Fi at full speed.
+  void updateBusy() {
+    final now = transfers.any((t) => t.result == null);
+    if (now != busy && Platform.isAndroid) android.invokeMethod('busy', now);
+    busy = now;
+  }
+
+  void send(uft.Peer p, List<uft.Pick> picks) {
+    final first = (picks.first.name ?? picks.first.path).split('/');
+    final what =
+        picks.length == 1 || picks.every((x) => x.name?.startsWith('${first[0]}/') ?? false)
+        ? (picks.length == 1 ? first.last : first[0])
+        : '${picks.length} items';
+    final t = Transfer('To ${p.name} · $what');
     setState(() => transfers.insert(0, t));
+    updateBusy();
+    void end() {
+      updateBusy();
+      if (Platform.isAndroid) {
+        android.invokeMethod('release', [for (final x in picks) x.path]);
+      }
+    }
+
     uft
-        .sendFiles(peer: p, paths: paths)
+        .sendFiles(peer: p, picks: picks)
         .listen(
           (e) => setState(() {
             switch (e) {
@@ -264,6 +301,7 @@ class HomeState extends State<Home> {
                   ..result = e.error;
             }
           }),
+          onDone: end,
           onError: (Object e) => setState(
             () => t
               ..failed = true

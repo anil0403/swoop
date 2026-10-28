@@ -5,6 +5,7 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:uft/main.dart';
+import 'package:uft/src/rust/api/uft.dart' show Pick;
 import 'package:uft/src/rust/frb_generated.dart';
 
 Future<void> waitFor(WidgetTester tester, Finder f, {int secs = 30}) async {
@@ -31,7 +32,7 @@ void main() {
     final p = home.peers.firstWhere((x) => x.name == peer);
 
     // Send (the file picker is skipped; pick() hands its paths to send()).
-    home.send(p, [Platform.environment['UFT_E2E_FILE']!]);
+    home.send(p, [Pick(path: Platform.environment['UFT_E2E_FILE']!)]);
     await waitFor(tester, find.textContaining('Sent '), secs: 60);
 
     // The peer sends back: offer dialog with the code, accept it.
