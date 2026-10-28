@@ -565,3 +565,266 @@ fn write_loop(sess: &Session, rx: Receiver<Job>, pool: Sender<Vec<u8>>) -> io::R
     }
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::BufWriter;
+    use std::net::SocketAddr;
+
+    const CS: u64 = 64 << 10;
+
+    struct F {
+        path: &'static str,
+        data: Vec<u8>,
+        mtime: i64,
+    }
+
+    fn f(path: &'static str, len: usize) -> F {
+        F { path, data: (0..len).map(|i| (i * 31 + i / 997) as u8).collect(), mtime: 1_600_000_000 }
+    }
+
+    fn caps() -> Caps {
+        Caps { aes: false, cores: 1, os: "test".into() }
+    }
+
+    fn tmp(name: &str) -> PathBuf {
+        std::env::temp_dir().join(format!("uft-recv-{name}-{:x}", proto::random_u64()))
+    }
+
+    /// Plain-TCP receiver; events go to the returned channel.
+    fn start(dir: &Path, null_sink: bool) -> (SocketAddr, Receiver<RecvEvent>) {
+        let l = TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = l.local_addr().unwrap();
+        let (tx, rx) = channel();
+        let opts = RecvOptions { dir: dir.into(), null_sink, name: "rx".into() };
+        let ctx = Arc::new(Ctx::new(opts, caps(), move |e| {
+            let _ = tx.send(e);
+        }));
+        thread::spawn(move || accept_loop(l, ctx, |tcp| Ok((tcp, "peer".to_string()))));
+        (addr, rx)
+    }
+
+    fn hello(addr: SocketAddr, session: u64, role: Role) -> TcpStream {
+        let mut s = TcpStream::connect(addr).unwrap();
+        s.set_read_timeout(Some(Duration::from_secs(10))).unwrap();
+        send(&mut s, &Msg::Hello { version: VERSION, session, role, caps: caps(), name: "tx".into() }).unwrap();
+        s
+    }
+
+    fn offer(addr: SocketAddr, session: u64, chunk_size: u64, files: &[F]) -> (TcpStream, Msg) {
+        let mut c = hello(addr, session, Role::Control);
+        assert!(matches!(proto::read_msg(&mut c).unwrap(), Msg::Welcome { .. }));
+        let files = files
+            .iter()
+            .map(|f| FileEntry { path: f.path.into(), size: f.data.len() as u64, mtime: f.mtime })
+            .collect();
+        send(&mut c, &Msg::Offer { chunk_size, files }).unwrap();
+        let reply = proto::read_msg(&mut c).unwrap();
+        (c, reply)
+    }
+
+    /// Sends the chunks not in `have` in reverse order, alternating over two data
+    /// connections (optionally corrupting one hash), and returns the final control message.
+    fn transfer(addr: SocketAddr, session: u64, mut c: TcpStream, files: &[F], have: &[Vec<u64>], corrupt: bool) -> Msg {
+        let mut jobs = Vec::new();
+        for (fi, file) in files.iter().enumerate() {
+            for (i, data) in file.data.chunks(CS as usize).enumerate() {
+                if !have[fi].contains(&(i as u64)) {
+                    jobs.push((fi as u32, i as u64, data));
+                }
+            }
+        }
+        jobs.reverse();
+        let mut conns: Vec<_> = (0..2).map(|_| BufWriter::new(hello(addr, session, Role::Data))).collect();
+        for (n, (fi, i, data)) in jobs.into_iter().enumerate() {
+            let mut h = *blake3::hash(data).as_bytes();
+            if corrupt && n == 0 {
+                h[0] ^= 1;
+            }
+            let _ = proto::write_chunk(&mut conns[n % 2], fi, i, &h, data);
+        }
+        drop(conns);
+        loop {
+            match proto::read_msg(&mut c).unwrap() {
+                Msg::Progress { .. } => {}
+                m => return m,
+            }
+        }
+    }
+
+    fn events(rx: &Receiver<RecvEvent>) -> Vec<RecvEvent> {
+        let mut out = Vec::new();
+        loop {
+            let e = rx.recv_timeout(Duration::from_secs(10)).unwrap();
+            let end = matches!(e, RecvEvent::Done { .. } | RecvEvent::Failed { .. });
+            out.push(e);
+            if end {
+                return out;
+            }
+        }
+    }
+
+    fn accepted(reply: Msg) -> Vec<Vec<u64>> {
+        match reply {
+            Msg::Accept { have } => have,
+            m => panic!("expected accept, got {m:?}"),
+        }
+    }
+
+    fn mtime(p: &Path) -> i64 {
+        unix_secs(fs::metadata(p).unwrap().modified().unwrap())
+    }
+
+    #[test]
+    fn transfers_files() {
+        let dir = tmp("basic");
+        let (addr, rx) = start(&dir, false);
+        let files = [f("empty.txt", 0), f("big.bin", 5 * CS as usize + 123), f("sub/deep/c.txt", 1000)];
+        let (c, reply) = offer(addr, 1, CS, &files);
+        let have = accepted(reply);
+        assert_eq!(have, vec![Vec::<u64>::new(); 3]);
+        assert_eq!(transfer(addr, 1, c, &files, &have, false), Msg::Done);
+        for file in &files {
+            let p = dir.join(file.path);
+            assert_eq!(fs::read(&p).unwrap(), file.data, "{}", file.path);
+            assert_eq!(mtime(&p), file.mtime);
+        }
+        assert!(!dir.join("big.bin.uftpart").exists());
+        let ev = events(&rx);
+        assert!(matches!(ev[0], RecvEvent::Started { files: 3, resumed: 0, .. }));
+        let total: u64 = files.iter().map(|f| f.data.len() as u64).sum();
+        assert!(matches!(ev.last(), Some(RecvEvent::Done { bytes, .. }) if *bytes == total));
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn bad_hash_fails() {
+        let dir = tmp("badhash");
+        let (addr, rx) = start(&dir, false);
+        let files = [f("a.bin", 2 * CS as usize)];
+        let (c, reply) = offer(addr, 2, CS, &files);
+        let have = accepted(reply);
+        assert!(matches!(transfer(addr, 2, c, &files, &have, true), Msg::Error { .. }));
+        assert!(matches!(events(&rx).last(), Some(RecvEvent::Failed { .. })));
+        assert!(!dir.join("a.bin").exists());
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn rejects_bad_offers() {
+        let dir = tmp("reject");
+        let (addr, _rx) = start(&dir, false);
+        assert!(matches!(offer(addr, 3, CS, &[f("../x", 1)]).1, Msg::Reject { .. }));
+        assert!(matches!(offer(addr, 4, 1024, &[f("x", 1)]).1, Msg::Reject { .. }));
+        assert!(matches!(offer(addr, 5, CS, &[f("x", 1), f("x", 1)]).1, Msg::Reject { .. }));
+        assert!(!dir.exists());
+    }
+
+    #[test]
+    fn resumes_from_state() {
+        let dir = tmp("resume");
+        let (addr, rx) = start(&dir, false);
+        let files = [f("r.bin", 3 * CS as usize + 10)];
+        let size = files[0].data.len() as u64;
+        fs::create_dir_all(&dir).unwrap();
+        let mut part = vec![0u8; size as usize];
+        for i in [0usize, 2] {
+            let r = i * CS as usize..(i + 1) * CS as usize;
+            part[r.clone()].copy_from_slice(&files[0].data[r]);
+        }
+        fs::write(dir.join("r.bin.uftpart"), part).unwrap();
+        let ps = PartState { size, mtime: files[0].mtime, chunk_size: CS, done: vec![2, 0, 9] };
+        fs::write(dir.join("r.bin.uftpart.state"), serde_json::to_vec(&ps).unwrap()).unwrap();
+
+        let (c, reply) = offer(addr, 6, CS, &files);
+        let have = accepted(reply);
+        assert_eq!(have, vec![vec![0, 2]]);
+        assert_eq!(transfer(addr, 6, c, &files, &have, false), Msg::Done);
+        assert_eq!(fs::read(dir.join("r.bin")).unwrap(), files[0].data);
+        assert!(!dir.join("r.bin.uftpart.state").exists());
+        let ev = events(&rx);
+        assert!(matches!(ev[0], RecvEvent::Started { resumed, .. } if resumed == 2 * CS));
+        assert!(matches!(ev.last(), Some(RecvEvent::Done { bytes, .. }) if *bytes == size - 2 * CS));
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn interrupted_session_persists_state() {
+        let dir = tmp("interrupt");
+        let (addr, rx) = start(&dir, false);
+        let files = [f("i.bin", 3 * CS as usize)];
+        let (mut c, reply) = offer(addr, 10, CS, &files);
+        accepted(reply);
+        let mut d = hello(addr, 10, Role::Data);
+        let chunk = &files[0].data[CS as usize..2 * CS as usize];
+        proto::write_chunk(&mut d, 0, 1, blake3::hash(chunk).as_bytes(), chunk).unwrap();
+        while proto::read_msg(&mut c).unwrap() != (Msg::Progress { done: CS }) {}
+        drop((c, d));
+        assert!(matches!(events(&rx).last(), Some(RecvEvent::Failed { .. })));
+
+        let (c, reply) = offer(addr, 11, CS, &files);
+        let have = accepted(reply);
+        assert_eq!(have, vec![vec![1]]);
+        assert_eq!(transfer(addr, 11, c, &files, &have, false), Msg::Done);
+        assert_eq!(fs::read(dir.join("i.bin")).unwrap(), files[0].data);
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn complete_final_has_all() {
+        let dir = tmp("complete");
+        let (addr, rx) = start(&dir, false);
+        let files = [f("done.bin", CS as usize + 1)];
+        fs::create_dir_all(&dir).unwrap();
+        let p = dir.join("done.bin");
+        fs::write(&p, &files[0].data).unwrap();
+        File::options().write(true).open(&p).unwrap().set_modified(system_time(files[0].mtime + 1).unwrap()).unwrap();
+
+        let (c, reply) = offer(addr, 7, CS, &files);
+        let have = accepted(reply);
+        assert_eq!(have, vec![vec![0, 1]]);
+        assert_eq!(transfer(addr, 7, c, &files, &have, false), Msg::Done);
+        assert!(!dir.join("done (1).bin").exists());
+        assert!(matches!(events(&rx).last(), Some(RecvEvent::Done { bytes: 0, .. })));
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn renames_on_conflict() {
+        let dir = tmp("conflict");
+        let (addr, _rx) = start(&dir, false);
+        fs::create_dir_all(&dir).unwrap();
+        fs::write(dir.join("a.txt"), "old").unwrap();
+        fs::write(dir.join("a (1).txt"), "older").unwrap();
+        let files = [f("a.txt", 100)];
+        let (c, reply) = offer(addr, 8, CS, &files);
+        let have = accepted(reply);
+        assert_eq!(transfer(addr, 8, c, &files, &have, false), Msg::Done);
+        assert_eq!(fs::read(dir.join("a.txt")).unwrap(), b"old");
+        assert_eq!(fs::read(dir.join("a (2).txt")).unwrap(), files[0].data);
+        assert_eq!(numbered(Path::new("d/noext"), 1), Path::new("d/noext (1)"));
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn null_sink_counts_without_disk() {
+        let dir = tmp("null");
+        let (addr, rx) = start(&dir, true);
+        let files = [f("x.bin", 3 * CS as usize), f("y/z", 0)];
+        let (c, reply) = offer(addr, 9, CS, &files);
+        let have = accepted(reply);
+        assert_eq!(transfer(addr, 9, c, &files, &have, false), Msg::Done);
+        assert!(!dir.exists());
+        assert!(matches!(events(&rx).last(), Some(RecvEvent::Done { bytes, .. }) if *bytes == 3 * CS));
+    }
+
+    #[test]
+    fn safe_paths() {
+        assert_eq!(safe_rel_path("a/b.txt"), Some(PathBuf::from("a/b.txt")));
+        assert_eq!(safe_rel_path("..a/.b"), Some(PathBuf::from("..a/.b")));
+        for p in ["", "/etc/passwd", "../x", "a/../b", "./a", "a/.", "a//b", "a/", "a\\b", "a\0b", ".."] {
+            assert_eq!(safe_rel_path(p), None, "{p:?}");
+        }
+    }
+}
