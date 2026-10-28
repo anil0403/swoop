@@ -1,8 +1,9 @@
 //! Device identity, pinned TLS 1.3 and hardware-based cipher choice.
 
 use crate::proto::Caps;
-use rustls::pki_types::{CertificateDer, PrivateKeyDer};
+use rustls::pki_types::{CertificateDer, PrivateKeyDer, PrivatePkcs8KeyDer};
 use rustls::{ClientConfig, ClientConnection, ServerConfig, ServerConnection, StreamOwned};
+use std::fs;
 use std::io;
 use std::net::{SocketAddr, TcpStream};
 use std::path::Path;
@@ -20,12 +21,31 @@ pub struct Identity {
 impl Identity {
     /// Loads `dir/cert.der` + `dir/key.der`, or generates and saves them (key mode 0600).
     pub fn load_or_create(dir: &Path) -> io::Result<Identity> {
-        todo!("{dir:?}")
+        fs::create_dir_all(dir)?;
+        let (cp, kp) = (dir.join("cert.der"), dir.join("key.der"));
+        if cp.exists() && kp.exists() {
+            return Ok(Identity {
+                cert: CertificateDer::from(fs::read(cp)?),
+                key: PrivateKeyDer::Pkcs8(PrivatePkcs8KeyDer::from(fs::read(kp)?)),
+            });
+        }
+        let id = Identity::generate()?;
+        let mut opts = fs::OpenOptions::new();
+        opts.write(true).create(true).truncate(true);
+        #[cfg(unix)]
+        std::os::unix::fs::OpenOptionsExt::mode(&mut opts, 0o600);
+        io::Write::write_all(&mut opts.open(kp)?, id.key.secret_der())?;
+        fs::write(cp, &id.cert)?;
+        Ok(id)
     }
 
     /// Fresh in-memory identity (tests, bench).
     pub fn generate() -> io::Result<Identity> {
-        todo!()
+        let ck = rcgen::generate_simple_self_signed(vec!["uft".into()]).map_err(io::Error::other)?;
+        Ok(Identity {
+            cert: ck.cert.der().clone(),
+            key: PrivateKeyDer::Pkcs8(PrivatePkcs8KeyDer::from(ck.signing_key.serialize_der())),
+        })
     }
 
     pub fn fingerprint(&self) -> String {
@@ -35,17 +55,26 @@ impl Identity {
 
 /// Lowercase hex BLAKE3 of the certificate DER (64 chars).
 pub fn fingerprint(cert_der: &[u8]) -> String {
-    todo!("{}", cert_der.len())
+    blake3::hash(cert_der).to_hex().to_string()
 }
 
 /// Runtime hardware AES detection (x86 AES-NI, ARMv8 AES); false elsewhere.
 pub fn has_aes() -> bool {
-    todo!()
+    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+    return is_x86_feature_detected!("aes");
+    #[cfg(target_arch = "aarch64")]
+    return std::arch::is_aarch64_feature_detected!("aes");
+    #[allow(unreachable_code)]
+    false
 }
 
 /// This device's capabilities for Hello/Welcome.
 pub fn caps() -> Caps {
-    todo!()
+    Caps {
+        aes: has_aes(),
+        cores: std::thread::available_parallelism().map_or(1, |n| n.get() as u32),
+        os: std::env::consts::OS.into(),
+    }
 }
 
 /// TLS 1.3 only. Requires a client cert (any cert, but its handshake signature is verified).
