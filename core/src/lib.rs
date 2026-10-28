@@ -1,0 +1,6 @@
+//! uft core: offline, pinned-TLS, multi-stream file transfer engine.
+
+/// Protocol version sent in every hello.
+pub const VERSION: u32 = 1;
+/// Default listen port; discovery's subnet sweep probes this.
+pub const DEFAULT_PORT: u16 = 47474;
