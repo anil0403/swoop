@@ -52,7 +52,22 @@ jobs:
           # Laid out like a prefix (bin/...) so it unpacks straight into ~/.local or Termux's $PREFIX.
           mkdir -p ../pkg/bin ../dist
           cp target/${{ matrix.target }}/release/uft ../pkg/bin/
-          tar -czf ../dist/${{ matrix.name }}.tar.gz -C ../pkg bin
+      - name: app
+        if: ${{ !contains(matrix.target, 'android') }}
+        working-directory: app
+        run: |
+          sudo apt-get update -q && sudo apt-get install -yq clang cmake ninja-build pkg-config libgtk-3-dev
+          # A git checkout, not the release archive: that one is x64 only.
+          git clone -q --filter=blob:none -b "$(cat .flutter-version)" https://github.com/flutter/flutter "$RUNNER_TEMP/flutter"
+          export PATH=$RUNNER_TEMP/flutter/bin:$PATH
+          flutter build linux --release
+          # The bundle stays together in lib/uft; the app finds its files through /proc/self/exe.
+          mkdir -p ../pkg/lib ../pkg/share/applications
+          cp -r build/linux/*/release/bundle ../pkg/lib/uft
+          ln -s ../lib/uft/uft-app ../pkg/bin/uft-app
+          cp linux/uft.desktop ../pkg/share/applications/
+      - name: package
+        run: cd pkg && tar -czf ../dist/${{ matrix.name }}.tar.gz *
       - uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.name }}

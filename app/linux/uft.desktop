@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=uft
+GenericName=File transfer
+Comment=Send files to nearby devices, offline
+Exec=uft-app
+Icon=document-send
+Terminal=false
+Categories=Network;FileTransfer;
