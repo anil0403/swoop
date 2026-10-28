@@ -48,7 +48,7 @@ void main() {
     final addr = setting('UFT_E2E_ADDR');
     if (addr != null) await home.addPeer(addr);
     await waitFor(tester, find.text(peer), secs: 60);
-    final p = home.peers.firstWhere((x) => x.name == peer);
+    final p = [...home.peers, ...home.manual].firstWhere((x) => x.name == peer);
 
     // Send (the file picker is skipped; pick() hands its picks to send()).
     var file = setting('UFT_E2E_FILE');

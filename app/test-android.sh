@@ -17,7 +17,8 @@ addr=
 (
   # The runtime permissions a user would grant in the dialogs.
   until adb shell pm list packages dev.uft.uft | grep -q uft; do sleep 1; done
-  for p in WRITE_EXTERNAL_STORAGE POST_NOTIFICATIONS; do adb shell pm grant dev.uft.uft android.permission.$p; done
+  # (each exists only on some Android versions)
+  for p in WRITE_EXTERNAL_STORAGE POST_NOTIFICATIONS; do adb shell pm grant dev.uft.uft android.permission.$p || true; done
   # Once the app's file has arrived, send one back, to the fingerprint the test wrote, through adb forward.
   until [ -f "$T/inbox/out.bin" ]; do sleep 0.5; done
   fp=$(adb exec-out run-as dev.uft.uft cat files/e2e-fp)
@@ -25,8 +26,9 @@ addr=
   UFT_HOME=$T/home "$U" send 127.0.0.1:47481 "$fp" "$T/back.bin" > "$T/send.log" 2>&1
 ) > /dev/null 2>&1 &
 flutter test integration_test --dart-define=UFT_E2E_PEER="$(cat /proc/sys/kernel/hostname)" \
-  ${addr:+--dart-define=UFT_E2E_ADDR=$addr}
-[[ $(stat -c %s "$T/inbox/out.bin") == $((64 << 20)) ]] && echo "app → CLI: 64 MiB arrived (chunks BLAKE3-checked)"
+  ${addr:+--dart-define=UFT_E2E_ADDR=$addr} || failed=1
+[[ $(stat -c %s "$T/inbox/out.bin" 2> /dev/null) == $((64 << 20)) ]] && echo "app → CLI: 64 MiB arrived (chunks BLAKE3-checked)"
 [[ $(adb shell md5sum /sdcard/Download/uft/back.bin | cut -d' ' -f1) == $(md5sum < "$T/back.bin" | cut -d' ' -f1) ]] &&
   echo "CLI → app: intact in Download/uft"
 tr '\r' '\n' < "$T/send.log" | grep -v '%' || true
+exit ${failed:-0}
