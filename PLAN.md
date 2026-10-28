@@ -97,6 +97,15 @@ Every device is the same peer: announces itself, listens while receiving is enab
 - [ ] 1.11 CI runs build, tests, clippy, fmt and the bench (informational) ✅; hard >5% gate needs stable self-hosted hardware.
 - [ ] 1.12 Android aarch64 build ✅ (CI + local); run in Termux for phone engine numbers.
 
+## Phase 2 tasks
+- [x] 2.1 UDP discovery (`core/src/discover.rs`): a query from every interface (never cellular) to multicast 239.255.47.74, broadcast, and each host of the /24; receivers answer unicast. Tested between two network namespaces, also with multicast and broadcast dropped (sweep only).
+- [ ] 2.2 mDNS/DNS-SD: skipped for now, the layers in 2.1 reach the same networks. Add if a real network shows a gap, or on Android (NsdManager) if the multicast lock gets in the way.
+- [x] 2.3 Manual fallback: `uft://HOST:PORT/FINGERPRINT` link (what the apps' QR code will hold).
+- [x] 2.4 Pairing: the receiver confirms an unknown sender; both sides show a 6-digit code; "always" saves it in `trusted`.
+- [x] 2.5 Path choice: per answering interface, Ethernet > Wi-Fi > other. Wi-Fi band order needs link info (1.9, Phase 6).
+- [ ] 2.6 Direction reversal (receiver dials the sender when inbound is blocked): deferred. Both sides must listen for it, and the main cause (a Linux firewall) goes away when the Linux app opens its port (Phase 3).
+- [ ] 2.7 Real networks, 0 settings: laptop ↔ phone (Termux) on the router, the phone hotspot and the laptop hotspot.
+
 ## Release tasks (Phase 7, see VERSIONING.md)
 - [x] 7.1 `release.yml`: on each `v*` tag, `uft` tarballs (Linux x86_64 + aarch64, Android aarch64) and `SHA256SUMS`; one-line install commands in README.
 - [ ] 7.2 Flutter Linux app inside the Linux tarballs (same names, so the same one-liner installs it), with a `.desktop` entry. With Phase 3.
