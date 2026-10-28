@@ -355,15 +355,15 @@ fn at(path: &Path) -> impl Fn(io::Error) -> io::Error + '_ {
     move |e| io::Error::new(e.kind(), format!("{}: {e}", path.display()))
 }
 
-// Android shared storage (FUSE) sometimes fails to open a directory that exists;
-// a full sync() is slower but just as safe.
+// Android shared storage (FUSE) sometimes says ENOENT for a folder that exists, on
+// open or on syncfs; a full sync() is slower but just as safe.
 fn syncfs(dir: &Path) -> io::Result<()> {
-    match File::open(dir) {
-        Ok(f) => rustix::fs::syncfs(f).map_err(|e| at(dir)(e.into())),
-        Err(_) => {
+    match File::open(dir).and_then(|f| Ok(rustix::fs::syncfs(f)?)) {
+        Err(e) if e.kind() == io::ErrorKind::NotFound => {
             rustix::fs::sync();
             Ok(())
         }
+        r => r.map_err(at(dir)),
     }
 }
 
