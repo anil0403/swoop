@@ -52,7 +52,7 @@ static void my_application_activate(GApplication* application) {
     gtk_window_set_title(window, "Swoop");
   }
 
-  gtk_window_set_default_size(window, 1280, 720);
+  gtk_window_set_default_size(window, 960, 640);
   // X11 shows this in the title bar and task switcher; Wayland takes it from the desktop file.
   gtk_window_set_default_icon_name("io.github.anil0403.swoop");
 
