@@ -96,7 +96,8 @@ pub fn serve(
 }
 
 /// Maps an untrusted offered path to a safe relative path, or None if it is absolute,
-/// empty, or contains `..`, `.`, empty components, NUL or backslash.
+/// empty, or contains `..`, `.`, empty components, NUL or backslash. On Windows, names it
+/// can't hold (`a:b`, `CON`, a trailing dot) are changed to ones it can.
 pub fn safe_rel_path(path: &str) -> Option<PathBuf> {
     if path.contains(['\0', '\\']) {
         return None;
@@ -106,9 +107,40 @@ pub fn safe_rel_path(path: &str) -> Option<PathBuf> {
         if c.is_empty() || c == "." || c == ".." {
             return None;
         }
+        #[cfg(windows)]
+        out.push(windows_name(c));
+        #[cfg(not(windows))]
         out.push(c);
     }
     Some(out)
+}
+
+/// `name` made legal on Windows: `<>:"|?*` and control characters become `_` (`:` would
+/// otherwise mean a drive or an NTFS stream), as do trailing dots and spaces (which Windows
+/// drops), and device names like `CON` or `com1.txt` get a `_` in front.
+#[cfg(any(windows, test))]
+fn windows_name(name: &str) -> String {
+    let mut s: Vec<char> = name
+        .chars()
+        .map(|c| if c < ' ' || "<>:\"|?*".contains(c) { '_' } else { c })
+        .collect();
+    for c in s.iter_mut().rev() {
+        if *c != '.' && *c != ' ' {
+            break;
+        }
+        *c = '_';
+    }
+    let s: String = s.into_iter().collect();
+    let stem = s.split('.').next().unwrap_or("").trim_end().to_ascii_uppercase();
+    let device = matches!(stem.as_str(), "CON" | "PRN" | "AUX" | "NUL" | "CONIN$" | "CONOUT$")
+        || (stem.len() == 4
+            && (stem.starts_with("COM") || stem.starts_with("LPT"))
+            && stem.as_bytes()[3].is_ascii_digit())
+        || ["COM", "LPT"].iter().any(|p| {
+            stem.strip_prefix(p)
+                .is_some_and(|d| matches!(d, "¹" | "²" | "³"))
+        });
+    if device { format!("_{s}") } else { s }
 }
 
 struct Ctx {
@@ -557,11 +589,16 @@ fn plan(ctx: &Ctx, peer_fp: String, chunk_size: u64, files: &[FileEntry]) -> Res
     let mut chunks = 0u64;
     let mut targets = Vec::with_capacity(files.len());
     for f in files {
-        let rel = safe_rel_path(&f.path)
-            // Swoop's own part and state names: a received one could pass for another transfer's.
-            .filter(|_| !f.path.ends_with(".uftpart") && !f.path.ends_with(".uftpart.state"))
-            .ok_or_else(|| format!("unsafe path {:?}", f.path))?;
-        if !seen.insert(rel.clone()) {
+        let rel = safe_rel_path(&f.path).ok_or_else(|| format!("unsafe path {:?}", f.path))?;
+        // Windows file names ignore case: A.txt and a.txt are the same file.
+        let key = rel.to_string_lossy();
+        #[cfg(windows)]
+        let key = key.to_lowercase();
+        // Swoop's own part and state names: a received one could pass for another transfer's.
+        if key.ends_with(".uftpart") || key.ends_with(".uftpart.state") {
+            return Err(format!("unsafe path {:?}", f.path));
+        }
+        if !seen.insert(key.to_string()) {
             return Err(format!("duplicate path {:?}", f.path));
         }
         chunks = chunks.saturating_add(chunk_count(f.size, chunk_size));
@@ -1321,6 +1358,8 @@ mod tests {
     fn safe_paths() {
         assert_eq!(safe_rel_path("a/b.txt"), Some(PathBuf::from("a/b.txt")));
         assert_eq!(safe_rel_path("..a/.b"), Some(PathBuf::from("..a/.b")));
+        #[cfg(windows)]
+        assert!(safe_rel_path("C:/Windows").is_some_and(|p| p.is_relative()));
         for p in [
             "",
             "/etc/passwd",
@@ -1335,6 +1374,27 @@ mod tests {
             "..",
         ] {
             assert_eq!(safe_rel_path(p), None, "{p:?}");
+        }
+    }
+
+    #[test]
+    fn windows_names() {
+        for (from, to) in [
+            ("a.txt", "a.txt"),
+            ("C:", "C_"),
+            ("a:stream", "a_stream"),
+            ("<>\"|?*\x01", "_______"),
+            ("a.", "a_"),
+            ("a .. ", "a____"),
+            ("CON", "_CON"),
+            ("con.txt", "_con.txt"),
+            ("Com1.tar.gz", "_Com1.tar.gz"),
+            ("lpt¹", "_lpt¹"),
+            ("nul .x", "_nul .x"),
+            ("COM10", "COM10"),
+            ("console", "console"),
+        ] {
+            assert_eq!(windows_name(from), to, "{from:?}");
         }
     }
 }
