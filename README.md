@@ -8,32 +8,32 @@ API 26 and 37; real phones pending). See
 
 ## Install
 
-One line, from the newest [release](https://github.com/anil0403/ultra-fast-data-transfer/releases) (no root).
+One line, from the newest [release](https://github.com/anil0403/swoop/releases) (no root).
 
 Linux (x86_64 or aarch64, glibc 2.35+, GTK 3): the app (`swoop-app`, also in the app menu as Swoop) and the `swoop`
 command, into `~/.local`. Run it again to update:
 
 ```sh
-mkdir -p ~/.local && curl -fsSL https://github.com/anil0403/ultra-fast-data-transfer/releases/latest/download/swoop-linux-$(uname -m).tar.gz | tar -xz -C ~/.local
+mkdir -p ~/.local && curl -fsSL https://github.com/anil0403/swoop/releases/latest/download/swoop-linux-$(uname -m).tar.gz | tar -xz -C ~/.local
 ```
 
 Or as an [AppImage](https://appimage.org) (`chmod +x swoop-$(uname -m).AppImage`, then run it), a Flatpak bundle
 (x86_64: `flatpak install --user swoop-x86_64.flatpak`; no direct link without a shared network inside the sandbox),
 or from the AUR on Arch (`swoop-bin`, e.g. `yay -S swoop-bin`), all on the
-[releases](https://github.com/anil0403/ultra-fast-data-transfer/releases/latest) page.
+[releases](https://github.com/anil0403/swoop/releases/latest) page.
 
 Android app (8.0 and newer; in releases once the signing key is set up, see [VERSIONING.md](VERSIONING.md)): open
-`https://github.com/anil0403/ultra-fast-data-transfer/releases/latest/download/swoop-android.apk` on the phone, or
+`https://github.com/anil0403/swoop/releases/latest/download/swoop-android.apk` on the phone, or
 from a computer with `adb`:
 
 ```sh
-curl -fsSLo /tmp/swoop.apk https://github.com/anil0403/ultra-fast-data-transfer/releases/latest/download/swoop-android.apk && adb install -r /tmp/swoop.apk
+curl -fsSLo /tmp/swoop.apk https://github.com/anil0403/swoop/releases/latest/download/swoop-android.apk && adb install -r /tmp/swoop.apk
 ```
 
 The `swoop` command in [Termux](https://termux.dev) (64-bit ARM phones):
 
 ```sh
-curl -fsSL https://github.com/anil0403/ultra-fast-data-transfer/releases/latest/download/swoop-android-aarch64.tar.gz | tar -xz -C $PREFIX
+curl -fsSL https://github.com/anil0403/swoop/releases/latest/download/swoop-android-aarch64.tar.gz | tar -xz -C $PREFIX
 ```
 
 Check with `swoop version`. A beta: use `releases/download/vX.Y.Z-beta.N` in place of `releases/latest/download`.
