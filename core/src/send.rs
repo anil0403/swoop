@@ -11,13 +11,13 @@ use std::ffi::OsStr;
 use std::fs::{self, File};
 use std::io::{self, BufWriter, Write};
 use std::net::{Shutdown, SocketAddr, TcpStream};
-use std::os::unix::fs::{FileExt, MetadataExt};
+use std::os::unix::fs::FileExt;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::mpsc::{self, Receiver, SyncSender};
 use std::sync::{Arc, Mutex};
 use std::thread;
-use std::time::{Duration, Instant};
+use std::time::{Duration, Instant, UNIX_EPOCH};
 
 pub enum Source {
     /// A file, or a directory sent recursively under its own name.
@@ -404,6 +404,15 @@ fn open_src(path: &Path) -> io::Result<File> {
     }
 }
 
+/// Modification time in whole seconds since the Unix epoch (negative before it); 0 when unknown.
+fn mtime(md: &fs::Metadata) -> i64 {
+    match md.modified().map(|t| t.duration_since(UNIX_EPOCH)) {
+        Ok(Ok(d)) => d.as_secs() as i64,
+        Ok(Err(e)) => -(e.duration().as_secs() as i64),
+        Err(_) => 0,
+    }
+}
+
 /// An offered file and where its bytes come from (None = synthetic).
 struct Item {
     entry: FileEntry,
@@ -433,7 +442,7 @@ fn collect(sources: &[Source]) -> io::Result<(Vec<Item>, Vec<String>)> {
                     entry: FileEntry {
                         path: name.clone(),
                         size: md.len(),
-                        mtime: md.mtime(),
+                        mtime: mtime(&md),
                     },
                     src: Some(path.clone()),
                 });
@@ -487,7 +496,7 @@ fn walk(
             entry: FileEntry {
                 path: rel,
                 size: md.len(),
-                mtime: md.mtime(),
+                mtime: mtime(md),
             },
             src: Some(path.to_owned()),
         });
