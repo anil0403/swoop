@@ -17,6 +17,11 @@ command, into `~/.local`. Run it again to update:
 mkdir -p ~/.local && curl -fsSL https://github.com/anil0403/ultra-fast-data-transfer/releases/latest/download/uft-linux-$(uname -m).tar.gz | tar -xz -C ~/.local
 ```
 
+Or as an [AppImage](https://appimage.org) (`chmod +x uft-$(uname -m).AppImage`, then run it), a Flatpak bundle
+(x86_64: `flatpak install --user uft-x86_64.flatpak`; no direct link without a shared network inside the sandbox),
+or from the AUR on Arch (`uft-bin`, e.g. `yay -S uft-bin`), all on the
+[releases](https://github.com/anil0403/ultra-fast-data-transfer/releases/latest) page.
+
 Android app (8.0 and newer; in releases once the signing key is set up, see [VERSIONING.md](VERSIONING.md)): open
 `https://github.com/anil0403/ultra-fast-data-transfer/releases/latest/download/uft-android.apk` on the phone, or
 from a computer with `adb`:

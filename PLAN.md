@@ -170,6 +170,13 @@ BLE contract (both platforms):
 - [x] 7.2 Flutter Linux app inside the Linux tarballs (`lib/uft/`, `bin/uft-app`, `share/applications/uft.desktop`), so the same one-liner installs it.
 - [ ] 7.3 Signed `uft-android.apk` on each release: built ✅; waits for the owner to add the keystore secrets (VERSIONING.md).
 - [x] 7.4 `version.yml`: automatic versions and tags from commit types (`next-version.sh`, tested in CI).
+- [x] 7.5 AppImage (x86_64 + aarch64) from the same files, with `appimagetool`.
+- [x] 7.6 Flatpak bundle (x86_64, `packaging/flatpak/dev.uft.uft.yml`, freedesktop 24.08). No direct link in the sandbox
+  (nmcli, iw, dnsmasq). Flathub later: needs a real app id, AppStream metainfo, a license and screenshots.
+- [ ] 7.7 AUR `uft-bin` (`packaging/aur/PKGBUILD`, builds with makepkg against v1.5.0): pushed by `release.yml` once the
+  owner adds `AUR_SSH_PRIVATE_KEY` (VERSIONING.md).
+- [ ] 7.8 Owner: a license (the repo has none; the PKGBUILD says `unknown`), the app name and ids (`dev.uft.uft`
+  placeholder), the APK and AUR secrets. F-Droid later.
 
 ## Test matrix (each release)
 4 pairings × {router Wi-Fi, one side wired, Android hotspot, Linux hotspot, isolated guest network, no network (BLE)} × hardware classes {budget Android, mid-range Android, flagship Android, Linux Intel Wi-Fi, Linux Realtek/MediaTek, Raspberry Pi 4/5, wired 1/2.5/10 GbE}.

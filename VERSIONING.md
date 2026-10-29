@@ -22,7 +22,7 @@ from the commit types below. **Never set or change a version by hand.**
 
   | Platform | Beta | Release |
   |---|---|---|
-  | Linux | GitHub pre-release | GitHub release, AUR, Flatpak (later) |
+  | Linux | GitHub pre-release | GitHub release (tarball, AppImage, Flatpak bundle), AUR (`uft-bin`), Flathub (later) |
   | Android | beta APK on GitHub | APK on GitHub, F-Droid (later) |
   | `uft` CLI | GitHub pre-release (Linux and Android binaries) | GitHub release |
 
@@ -204,7 +204,9 @@ hand** (Actions ▸ version ▸ Run workflow, with `bump`: `auto`, `major`, `min
    committed).
 2. Build:
    - **Linux:** `uft-linux-x86_64.tar.gz`, `uft-linux-aarch64.tar.gz` (glibc 2.35 and newer), each unpacking into
-     a prefix: `bin/uft`, the app (`bin/uft-app`, `lib/uft/`) and `share/applications/uft.desktop`.
+     a prefix: `bin/uft`, the app (`bin/uft-app`, `lib/uft/`) and `share/applications/uft.desktop`. The same
+     files as `uft-x86_64.AppImage` and `uft-aarch64.AppImage`, and `uft-x86_64.flatpak`
+     ([`packaging/flatpak`](packaging/flatpak), app id `dev.uft.uft`).
    - **Android:** `uft-android.apk` (the app; arm64, armv7 and x86_64), and `uft-android-aarch64.tar.gz` (the
      `uft` command, for Termux).
    - **APK signing:** with the release key from the repository secrets `ANDROID_KEYSTORE` (the `.jks` file,
@@ -217,8 +219,10 @@ hand** (Actions ▸ version ▸ Run workflow, with `bump`: `auto`, `major`, `min
    `SHA256SUMS` to the GitHub release, making a draft first if `version.yml` didn't.
 4. Publish the draft. A release is marked "latest"; a beta never is, and stays a pre-release. The install commands
    in the [README](README.md#install) use `releases/latest`, so they always get the newest release, never a beta.
-5. **Package repositories are by hand for now:** the AUR package, and later Flatpak and F-Droid, are updated by the
-   owner after a release.
+5. **AUR (releases only, not betas):** set `pkgver` in [`packaging/aur/PKGBUILD`](packaging/aur/PKGBUILD), take the
+   checksums of the uploaded tarballs and push `uft-bin` to the AUR, with the SSH key in the repository secret
+   `AUR_SSH_PRIVATE_KEY`, added by the owner (its public half goes in the owner's AUR account, which must own or
+   first create `uft-bin`). Without it the step is skipped with a warning. Flathub and F-Droid are later, by hand.
 
 **Updates:** the apps work offline and need no internet to transfer. Whether they check GitHub for updates when
 online is still open; package managers (AUR, Flatpak, F-Droid) update by themselves.
