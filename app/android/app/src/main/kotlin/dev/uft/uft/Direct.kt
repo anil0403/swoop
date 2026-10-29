@@ -324,6 +324,8 @@ class Direct(private val ctx: Context, private val local: (Boolean) -> Unit) : E
     // --- Hotspot ---------------------------------------------------------------------------------------------
 
     private var reservation: WifiManager.LocalOnlyHotspotReservation? = null
+    /** True while this phone hosts the hotspot. */
+    val hostingHotspot get() = reservation != null
     private var hosted: Map<String, String>? = null
     private var hosting: MethodChannel.Result? = null
 

@@ -111,6 +111,7 @@ class MainActivity : FlutterActivity() {
                     direct.leave()
                     result.success(null)
                 }
+                "link" -> result.success(link())
                 else -> result.notImplemented()
             }
         }
@@ -118,6 +119,27 @@ class MainActivity : FlutterActivity() {
     }
 
     private fun wifi() = applicationContext.getSystemService(WifiManager::class.java)
+
+    /** This device's local link for diagnostics (core `link::Link`): {kind, mhz, mbps, dbm}, or null. */
+    private fun link(): Map<String, Any?>? {
+        // ponytail: hosting a LocalOnlyHotspot, the link is the phone's own AP; WifiManager doesn't report its rate.
+        if (direct.hostingHotspot) return null
+        val cm = getSystemService(ConnectivityManager::class.java)
+        val caps = cm.getNetworkCapabilities(cm.boundNetworkForProcess ?: cm.activeNetwork) ?: return null
+        if (caps.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET)) {
+            return mapOf("kind" to "ethernet", "mhz" to null, "mbps" to null, "dbm" to null)
+        }
+        if (!caps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI)) return null
+        @Suppress("DEPRECATION")
+        val w = wifi().connectionInfo ?: return null
+        val mbps = if (Build.VERSION.SDK_INT >= 29) maxOf(w.linkSpeed, w.txLinkSpeedMbps, w.rxLinkSpeedMbps) else w.linkSpeed
+        return mapOf(
+            "kind" to "wifi",
+            "mhz" to w.frequency.takeIf { it > 0 },
+            "mbps" to mbps.takeIf { it > 0 },
+            "dbm" to w.rssi.takeIf { it in -126..-1 },
+        )
+    }
 
     private fun deviceName(): String =
         Settings.Global.getString(contentResolver, Settings.Global.DEVICE_NAME)?.takeIf { it.isNotBlank() }
