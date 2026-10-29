@@ -12,7 +12,7 @@ export 'package:uft/src/rust/api/direct.dart' show Wifi;
 const _channel = MethodChannel('uft');
 const _events = EventChannel('uft/ble');
 
-/// A uft device seen over Bluetooth; `fp` is the first 16 hex chars of its fingerprint.
+/// A Swoop device seen over Bluetooth; `fp` is the first 16 hex chars of its fingerprint.
 class BlePeer {
   BlePeer(this.id, this.name, this.fp);
   final String id, name, fp;

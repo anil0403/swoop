@@ -21,7 +21,7 @@ class App extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => MaterialApp(
-    title: 'uft',
+    title: 'Swoop',
     theme: ThemeData(colorSchemeSeed: Colors.teal),
     darkTheme: ThemeData(colorSchemeSeed: Colors.teal, brightness: Brightness.dark),
     home: const Home(),
@@ -122,7 +122,7 @@ class HomeState extends State<Home> {
         (d, name) = (info['downloads']!, info['name']!);
       } else {
         final downloads = await getDownloadsDirectory() ?? await getApplicationDocumentsDirectory();
-        (d, name) = ('${downloads.path}/uft', Platform.localHostname);
+        (d, name) = ('${downloads.path}/Swoop', Platform.localHostname);
       }
       final m = await uft.init(configDir: config.path, name: name);
       setState(() {
@@ -494,7 +494,7 @@ class HomeState extends State<Home> {
               controller: field,
               autofocus: true,
               decoration: const InputDecoration(
-                labelText: "The other device's address or uft:// link",
+                labelText: "The other device's address or swoop:// link",
                 hintText: '192.168.1.20',
               ),
               onSubmitted: (v) => Navigator.pop(context, v),
@@ -535,7 +535,7 @@ class HomeState extends State<Home> {
     final theme = Theme.of(context);
     return Scaffold(
       appBar: AppBar(
-        title: Text(me == null ? 'uft' : 'uft · ${me!.name}'),
+        title: Text(me == null ? 'Swoop' : 'Swoop · ${me!.name}'),
         actions: [
           IconButton(
             icon: const Icon(Icons.add_link),
@@ -565,7 +565,7 @@ class HomeState extends State<Home> {
           if (peers.isEmpty && manual.isEmpty)
             const Padding(
               padding: EdgeInsets.symmetric(vertical: 16),
-              child: Text('Looking for devices on this network… Open uft on the other device.'),
+              child: Text('Looking for devices on this network… Open Swoop on the other device.'),
             ),
           for (final p in [
             ...peers,
@@ -590,7 +590,7 @@ class HomeState extends State<Home> {
             Card(
               child: ListTile(
                 leading: const Icon(Icons.bluetooth),
-                title: Text(b.name.isEmpty ? 'uft device' : b.name),
+                title: Text(b.name.isEmpty ? 'Swoop device' : b.name),
                 subtitle: const Text('Not on this network · sends over a direct Wi-Fi link'),
                 trailing: const Icon(Icons.send),
                 onTap: () => sendDirect(b),

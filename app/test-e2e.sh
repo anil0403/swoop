@@ -1,9 +1,9 @@
 #!/bin/bash
-# The app (this desktop) ↔ the uft CLI in a network namespace "peer" behind a veth.
+# The app (this desktop) ↔ the swoop CLI in a network namespace "peer" behind a veth.
 # Needs sudo and a display. Usage: app/test-e2e.sh
 set -eu
 cd "$(dirname "$0")"
-T=$(mktemp -d); (cd ../core && cargo build --release -q) && cp ../core/target/release/uft "$T/uft"; U=$T/uft
+T=$(mktemp -d); (cd ../core && cargo build --release -q) && cp ../core/target/release/swoop "$T/swoop"; U=$T/swoop
 head -c 200M /dev/urandom > "$T/out.bin"; head -c 30M /dev/urandom > "$T/back.bin"
 mkdir -p "$T/inbox" "$T/xdg/config" "$T/dl"
 echo "XDG_DOWNLOAD_DIR=\"$T/dl\"" > "$T/xdg/config/user-dirs.dirs"
@@ -26,5 +26,5 @@ export PATH=$HOME/development/flutter/bin:$HOME/.cargo/bin:$PATH
 XDG_CONFIG_HOME=$T/xdg/config XDG_DATA_HOME=$T/xdg/data UFT_E2E_PEER=peer-ns UFT_E2E_FILE=$T/out.bin \
   flutter test integration_test -d linux
 cmp "$T/out.bin" "$T/inbox/out.bin" && echo "app → CLI: intact"
-cmp "$T/back.bin" "$T/dl/uft/back.bin" && echo "CLI → app: intact"
+cmp "$T/back.bin" "$T/dl/Swoop/back.bin" && echo "CLI → app: intact"
 tr '\r' '\n' < "$T/send.log" | grep -v '%' || true

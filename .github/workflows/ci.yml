@@ -30,7 +30,7 @@ jobs:
         run: |
           cargo build --release --locked
           echo '```' >> "$GITHUB_STEP_SUMMARY"
-          ./target/release/uft bench --size 2G | tee -a "$GITHUB_STEP_SUMMARY"
+          ./target/release/swoop bench --size 2G | tee -a "$GITHUB_STEP_SUMMARY"
           echo '```' >> "$GITHUB_STEP_SUMMARY"
 
   android:

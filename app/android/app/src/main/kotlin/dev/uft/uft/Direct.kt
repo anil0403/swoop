@@ -280,7 +280,7 @@ class Direct(private val ctx: Context, private val local: (Boolean) -> Unit) : E
             override fun onServicesDiscovered(g: BluetoothGatt, status: Int) {
                 main.post {
                     val ch = g.getService(service)?.getCharacteristic(invite)
-                        ?: return@post finish("That device isn't offering uft invites")
+                        ?: return@post finish("That device isn't offering Swoop invites")
                     val ok = if (Build.VERSION.SDK_INT >= 33) {
                         g.writeCharacteristic(ch, bytes, BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT) ==
                             BluetoothStatusCodes.SUCCESS

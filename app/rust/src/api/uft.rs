@@ -152,17 +152,17 @@ pub fn diagnose(fingerprint: String, speed: f64) -> Option<String> {
     Some(line)
 }
 
-/// This device as `uft://IP:PORT/FINGERPRINT`, one per local network: what to type on a device that can't find it.
+/// This device as `swoop://IP:PORT/FINGERPRINT`, one per local network: what to type on a device that can't find it.
 #[flutter_rust_bridge::frb(sync)]
 pub fn my_links() -> Result<Vec<String>, String> {
     let fp = &state()?.fp;
     Ok(discover::local_ips()
         .iter()
-        .map(|ip| format!("uft://{ip}:{DEFAULT_PORT}/{fp}"))
+        .map(|ip| format!("swoop://{ip}:{DEFAULT_PORT}/{fp}"))
         .collect())
 }
 
-/// A device scanning can't find: a `uft://HOST:PORT/FINGERPRINT` link (taken as is), or an `IP[:PORT]`
+/// A device scanning can't find: a `swoop://HOST:PORT/FINGERPRINT` link (taken as is), or an `IP[:PORT]`
 /// (asked who it is, ~2 s).
 pub fn connect(target: String) -> Result<Peer, String> {
     let me = &state()?.fp;
@@ -172,12 +172,12 @@ pub fn connect(target: String) -> Result<Peer, String> {
             .or_else(|_| h.parse::<Ipv4Addr>().map(|ip| SocketAddr::from((ip, DEFAULT_PORT))))
             .map_err(|_| format!("{h:?} is not an address like 192.168.1.20"))
     };
-    if let Some(link) = target.strip_prefix("uft://") {
+    if let Some(link) = target.strip_prefix("swoop://") {
         let (host, fp) = link
             .trim_end_matches('/')
             .rsplit_once('/')
             .filter(|(_, f)| f.len() == 64 && f.bytes().all(|b| b.is_ascii_hexdigit()))
-            .ok_or("bad link: expected uft://HOST:PORT/FINGERPRINT")?;
+            .ok_or("bad link: expected swoop://HOST:PORT/FINGERPRINT")?;
         let fp = fp.to_ascii_lowercase();
         return Ok(Peer {
             name: host.to_string(),
@@ -204,7 +204,7 @@ pub fn connect(target: String) -> Result<Peer, String> {
             addr: addr.to_string(),
             ..peer(f, me)
         })
-        .ok_or_else(|| format!("no uft device answered at {addr}; is it receiving?"))
+        .ok_or_else(|| format!("no Swoop device answered at {addr}; is it receiving?"))
 }
 
 /// Scans for `secs`, sending the whole list of other devices each time it changes.
@@ -271,7 +271,7 @@ pub enum Incoming {
 /// Receives into `dir` and makes this device discoverable, until the app exits.
 pub fn receive(dir: String, sink: StreamSink<Incoming>) -> Result<(), String> {
     let st = state()?;
-    let port_err = |e: std::io::Error| format!("port {DEFAULT_PORT} is busy ({e}); is uft already running?");
+    let port_err = |e: std::io::Error| format!("port {DEFAULT_PORT} is busy ({e}); is Swoop already running?");
     let listener = TcpListener::bind((Ipv4Addr::UNSPECIFIED, DEFAULT_PORT)).map_err(port_err)?;
     let udp = UdpSocket::bind((Ipv4Addr::UNSPECIFIED, DEFAULT_PORT)).map_err(port_err)?;
     let me = Device {

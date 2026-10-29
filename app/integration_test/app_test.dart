@@ -1,4 +1,4 @@
-// Full flow against a `uft` CLI on the network: see app/test-e2e.sh (Linux) and app/test-android.sh.
+// Full flow against a `swoop` CLI on the network: see app/test-e2e.sh (Linux) and app/test-android.sh.
 // Without UFT_E2E_PEER (environment, or --dart-define on a device) it only checks that the app starts.
 import 'dart:io';
 import 'dart:math';

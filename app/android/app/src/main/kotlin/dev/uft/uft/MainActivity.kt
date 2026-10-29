@@ -83,7 +83,7 @@ class MainActivity : FlutterActivity() {
                     mapOf(
                         "name" to deviceName(),
                         "downloads" to File(
-                            Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), "uft",
+                            Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), "Swoop",
                         ).path,
                     ),
                 )

@@ -17,16 +17,16 @@ use uft::send::{self, SendOptions, SendStats, Source, Streams};
 use uft::tls::Identity;
 
 const USAGE: &str = "usage:
-  uft id                                   print this device's fingerprint
-  uft version                              print the version
-  uft recv [--dir D] [--port P] [--null] [--yes]
+  swoop id                                 print this device's fingerprint
+  swoop version                            print the version
+  swoop recv [--dir D] [--port P] [--null] [--yes]
                                            receive; nearby devices find this one
-  uft scan [--secs N]                      list receivers nearby
-  uft send DEVICE PATH... [--streams auto|N]
-  uft send DEVICE --synthetic SIZE [--streams auto|N]
-  uft bench [--size SIZE] [--streams auto|N]
-DEVICE: a name or fingerprint prefix from `uft scan`, a HOST[:PORT] (optionally
-        followed by its FINGERPRINT), or a uft:// link printed by `uft recv`
+  swoop scan [--secs N]                    list receivers nearby
+  swoop send DEVICE PATH... [--streams auto|N]
+  swoop send DEVICE --synthetic SIZE [--streams auto|N]
+  swoop bench [--size SIZE] [--streams auto|N]
+DEVICE: a name or fingerprint prefix from `swoop scan`, a HOST[:PORT] (optionally
+        followed by its FINGERPRINT), or a swoop:// link printed by `swoop recv`
 --yes:  accept every offer (otherwise unknown devices are confirmed with a code)
 SIZE:   bytes or K/M/G/T suffix (1024-based)";
 
@@ -64,14 +64,14 @@ fn main() -> ExitCode {
     let cmd = match parse_args(&args) {
         Ok(c) => c,
         Err(e) => {
-            eprintln!("uft: {e}\n{USAGE}");
+            eprintln!("swoop: {e}\n{USAGE}");
             return ExitCode::FAILURE;
         }
     };
     match run(cmd) {
         Ok(()) => ExitCode::SUCCESS,
         Err(e) => {
-            eprintln!("uft: {e}");
+            eprintln!("swoop: {e}");
             ExitCode::FAILURE
         }
     }
@@ -187,12 +187,12 @@ fn parse_args(args: &[String]) -> Result<Cmd, String> {
                 fp = Some(f.to_ascii_lowercase());
                 paths = p;
             }
-            if let Some(link) = device.strip_prefix("uft://") {
+            if let Some(link) = device.strip_prefix("swoop://") {
                 let (host, f) = link
                     .trim_end_matches('/')
                     .rsplit_once('/')
                     .filter(|(h, f)| !h.is_empty() && is_fp(f) && fp.is_none())
-                    .ok_or_else(|| format!("bad link {device:?} (uft://HOST:PORT/FINGERPRINT)"))?;
+                    .ok_or_else(|| format!("bad link {device:?} (swoop://HOST:PORT/FINGERPRINT)"))?;
                 fp = Some(f.to_ascii_lowercase());
                 device = host.to_string();
             }
@@ -294,7 +294,7 @@ fn resolve(device: &str, fp: Option<String>) -> Res<(SocketAddr, String, String)
     };
     let found = discover::scan(port, Duration::from_secs(5), &v4, |f| is_match(f))?;
     let f = found.iter().find(|f| is_match(f)).ok_or_else(|| {
-        format!("no device {device:?} found nearby; see `uft scan`, or give HOST FINGERPRINT")
+        format!("no device {device:?} found nearby; see `swoop scan`, or give HOST FINGERPRINT")
     })?;
     Ok((f.addrs[0], f.device.fp.clone(), f.device.name.clone()))
 }
@@ -308,7 +308,7 @@ fn confirm(o: &Offer, me: &str, trust: &Mutex<Trust>) -> bool {
     }
     if !std::io::stdin().is_terminal() {
         eprintln!(
-            "uft: declined {} from {}: not trusted yet (confirm in a terminal, or use --yes)",
+            "swoop: declined {} from {}: not trusted yet (confirm in a terminal, or use --yes)",
             human(o.total),
             o.peer_name
         );
@@ -328,7 +328,7 @@ fn confirm(o: &Offer, me: &str, trust: &Mutex<Trust>) -> bool {
         "y" | "yes" => true,
         "a" | "always" => {
             if let Err(e) = trust.add(&o.peer_fp, &o.peer_name) {
-                eprintln!("uft: could not save trust: {e}");
+                eprintln!("swoop: could not save trust: {e}");
             }
             true
         }
@@ -342,7 +342,7 @@ fn device_name() -> String {
         .filter_map(|p| std::fs::read_to_string(p).ok())
         .map(|s| s.trim().to_string())
         .find(|s| !s.is_empty())
-        .unwrap_or_else(|| "uft".into())
+        .unwrap_or_else(|| "swoop".into())
 }
 
 /// Decimal units, picked from `n` (1 MB = 1e6 B).
@@ -415,7 +415,7 @@ fn summary(s: &SendStats) -> String {
 fn run(cmd: Cmd) -> Res<()> {
     match cmd {
         Cmd::Help => println!("{USAGE}"),
-        Cmd::Version => println!("uft {}", env!("CARGO_PKG_VERSION")),
+        Cmd::Version => println!("swoop {}", env!("CARGO_PKG_VERSION")),
         Cmd::Id => println!("{}", identity()?.fingerprint()),
         Cmd::Recv {
             dir,
@@ -429,7 +429,7 @@ fn run(cmd: Cmd) -> Res<()> {
             let port = listener.local_addr()?.port();
             println!("receiving as {name:?} on port {port}, fingerprint {fp}");
             for ip in discover::local_ips() {
-                println!("  link: uft://{ip}:{port}/{fp}");
+                println!("  link: swoop://{ip}:{port}/{fp}");
             }
             let mut me = Device {
                 fp: fp.clone(),
@@ -451,11 +451,11 @@ fn run(cmd: Cmd) -> Res<()> {
                             me.clone()
                         };
                         if let Err(e) = discover::respond(sock, me) {
-                            eprintln!("uft: discovery stopped: {e}");
+                            eprintln!("swoop: discovery stopped: {e}");
                         }
                     });
                 }
-                Err(e) => eprintln!("uft: not discoverable (UDP {port}: {e}); senders need a link"),
+                Err(e) => eprintln!("swoop: not discoverable (UDP {port}: {e}); senders need a link"),
             }
             let accept: Option<recv::Accept> = if yes {
                 None
@@ -477,7 +477,7 @@ fn run(cmd: Cmd) -> Res<()> {
             let found = discover::scan(DEFAULT_PORT, Duration::from_secs(secs), &[], |_| false)?;
             if found.is_empty() {
                 println!(
-                    "no devices found: run `uft recv` on the other device, on the same network"
+                    "no devices found: run `swoop recv` on the other device, on the same network"
                 );
             }
             for f in &found {
@@ -535,7 +535,7 @@ fn run(cmd: Cmd) -> Res<()> {
             };
             std::thread::spawn(move || {
                 if let Err(e) = recv::serve(listener, Arc::new(rx), opts, |_| {}) {
-                    eprintln!("uft: bench receiver: {e}");
+                    eprintln!("swoop: bench receiver: {e}");
                 }
             });
             let sources = [Source::Synthetic {
@@ -709,7 +709,7 @@ mod tests {
             })
         );
         assert_eq!(
-            parse_args(&args(&format!("send uft://10.0.0.2:9/{FP}/ a"))),
+            parse_args(&args(&format!("send swoop://10.0.0.2:9/{FP}/ a"))),
             Ok(Cmd::Send {
                 device: "10.0.0.2:9".into(),
                 fp: Some(FP.into()),
@@ -728,9 +728,9 @@ mod tests {
             "bench --frobnicate".into(),
             "send".into(),
             "send h".into(),
-            "send uft://h/abc a".into(),
-            format!("send uft:///{FP} a"),
-            format!("send uft://h/{FP} {FP} a"),
+            "send swoop://h/abc a".into(),
+            format!("send swoop:///{FP} a"),
+            format!("send swoop://h/{FP} {FP} a"),
             "scan --secs 0".into(),
             "scan --yes".into(),
             format!("send h {FP}"),

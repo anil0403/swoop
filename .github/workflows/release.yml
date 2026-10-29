@@ -28,9 +28,9 @@ jobs:
         include:
           # glibc, not musl: musl's memcpy halves engine speed. Built on 22.04 (glibc 2.35) so it runs on
           # Ubuntu 22.04+, Debian 12+, Fedora 36+ and rolling distros.
-          - { os: ubuntu-22.04, target: x86_64-unknown-linux-gnu, name: uft-linux-x86_64 }
-          - { os: ubuntu-22.04-arm, target: aarch64-unknown-linux-gnu, name: uft-linux-aarch64 }
-          - { os: ubuntu-latest, target: aarch64-linux-android, name: uft-android-aarch64 }
+          - { os: ubuntu-22.04, target: x86_64-unknown-linux-gnu, name: swoop-linux-x86_64 }
+          - { os: ubuntu-22.04-arm, target: aarch64-unknown-linux-gnu, name: swoop-linux-aarch64 }
+          - { os: ubuntu-latest, target: aarch64-linux-android, name: swoop-android-aarch64 }
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -50,9 +50,9 @@ jobs:
             cargo build --release --locked --target ${{ matrix.target }}
           fi
           # Laid out like a prefix (bin/...) so it unpacks straight into ~/.local or Termux's $PREFIX.
-          mkdir -p ../pkg/bin ../pkg/share/licenses/uft ../dist
-          cp ../LICENSE ../pkg/share/licenses/uft/
-          cp target/${{ matrix.target }}/release/uft ../pkg/bin/
+          mkdir -p ../pkg/bin ../pkg/share/licenses/swoop ../dist
+          cp ../LICENSE ../pkg/share/licenses/swoop/
+          cp target/${{ matrix.target }}/release/swoop ../pkg/bin/
       - name: app
         if: ${{ !contains(matrix.target, 'android') }}
         working-directory: app
@@ -62,11 +62,11 @@ jobs:
           git clone -q --filter=blob:none -b "$(cat .flutter-version)" https://github.com/flutter/flutter "$RUNNER_TEMP/flutter"
           export PATH=$RUNNER_TEMP/flutter/bin:$PATH
           flutter build linux --release
-          # The bundle stays together in lib/uft; the app finds its files through /proc/self/exe.
+          # The bundle stays together in lib/swoop; the app finds its files through /proc/self/exe.
           mkdir -p ../pkg/lib ../pkg/share/applications
-          cp -r build/linux/*/release/bundle ../pkg/lib/uft
-          ln -s ../lib/uft/uft-app ../pkg/bin/uft-app
-          cp linux/uft.desktop ../pkg/share/applications/
+          cp -r build/linux/*/release/bundle ../pkg/lib/swoop
+          ln -s ../lib/swoop/swoop-app ../pkg/bin/swoop-app
+          cp linux/io.github.anil0403.swoop.desktop ../pkg/share/applications/
       - name: package
         run: cd pkg && tar -czf ../dist/${{ matrix.name }}.tar.gz *
       - name: appimage
@@ -74,14 +74,14 @@ jobs:
         run: |
           arch=${{ startsWith(matrix.target, 'x86_64') && 'x86_64' || 'aarch64' }}
           mkdir -p AppDir/usr && cp -r pkg/* AppDir/usr/
-          ln -s usr/bin/uft-app AppDir/AppRun
-          sed 's/^Icon=.*/Icon=uft/' pkg/share/applications/uft.desktop > AppDir/uft.desktop
-          cp app/android/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png AppDir/uft.png
+          ln -s usr/bin/swoop-app AppDir/AppRun
+          sed 's/^Icon=.*/Icon=swoop/' pkg/share/applications/io.github.anil0403.swoop.desktop > AppDir/swoop.desktop
+          cp app/android/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png AppDir/swoop.png
           curl -fsSLo "$RUNNER_TEMP/appimagetool" \
             "https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-$arch.AppImage"
           chmod +x "$RUNNER_TEMP/appimagetool"
           # No FUSE on the runners.
-          ARCH=$arch APPIMAGE_EXTRACT_AND_RUN=1 "$RUNNER_TEMP/appimagetool" AppDir dist/uft-$arch.AppImage
+          ARCH=$arch APPIMAGE_EXTRACT_AND_RUN=1 "$RUNNER_TEMP/appimagetool" AppDir dist/swoop-$arch.AppImage
       - uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.name }}
@@ -126,11 +126,11 @@ jobs:
           export UFT_KEYSTORE=$RUNNER_TEMP/release.jks
           base64 -d <<< "$KEYSTORE" > "$UFT_KEYSTORE"
           flutter build apk --release
-          mkdir -p ../dist && cp build/app/outputs/flutter-apk/app-release.apk ../dist/uft-android.apk
+          mkdir -p ../dist && cp build/app/outputs/flutter-apk/app-release.apk ../dist/swoop-android.apk
       - uses: actions/upload-artifact@v4
         with:
-          name: uft-android-apk
-          path: dist/uft-android.apk
+          name: swoop-android-apk
+          path: dist/swoop-android.apk
           if-no-files-found: ignore
 
   # ponytail: x86_64 only; an aarch64 bundle needs an arm runner in this container.
@@ -146,13 +146,13 @@ jobs:
           ref: ${{ env.TAG }}
       - uses: actions/download-artifact@v4
         with:
-          name: uft-linux-x86_64
+          name: swoop-linux-x86_64
           path: packaging/flatpak
       - run: cp app/android/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png packaging/flatpak/icon.png
       - uses: flathub-infra/flatpak-github-actions/flatpak-builder@master
         with:
-          manifest-path: packaging/flatpak/dev.uft.uft.yml
-          bundle: uft-x86_64.flatpak
+          manifest-path: packaging/flatpak/io.github.anil0403.swoop.yml
+          bundle: swoop-x86_64.flatpak
           cache: false
 
   publish:
@@ -183,7 +183,7 @@ jobs:
           gh release edit "$TAG" --draft=false ${pre:---latest}
       # Releases only (VERSIONING.md); the owner adds the AUR key.
       - if: ${{ !contains(env.TAG, '-') && env.AUR_KEY == '' }}
-        run: echo "::warning::no AUR_SSH_PRIVATE_KEY secret; uft-bin not updated on the AUR (see VERSIONING.md)"
+        run: echo "::warning::no AUR_SSH_PRIVATE_KEY secret; swoop-bin not updated on the AUR (see VERSIONING.md)"
       - if: ${{ !contains(env.TAG, '-') && env.AUR_KEY != '' }}
         uses: actions/checkout@v4
         with:
@@ -194,7 +194,7 @@ jobs:
       - if: ${{ !contains(env.TAG, '-') && env.AUR_KEY != '' }}
         uses: KSXGitHub/github-actions-deploy-aur@v4.2.0
         with:
-          pkgname: uft-bin
+          pkgname: swoop-bin
           pkgbuild: src/packaging/aur/PKGBUILD
           updpkgsums: true
           commit_username: ${{ github.repository_owner }}

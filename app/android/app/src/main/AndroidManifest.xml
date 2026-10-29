@@ -7,7 +7,7 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
-    <!-- Saving into Download/uft: needed up to Android 10; 11+ lets apps add files there. -->
+    <!-- Saving into Download/Swoop: needed up to Android 10; 11+ lets apps add files there. -->
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="29" />
     <!-- Direct link: BLE advertise/scan/invite, LocalOnlyHotspot, joining it. -->
     <uses-permission android:name="android.permission.BLUETOOTH" android:maxSdkVersion="30" />
@@ -24,7 +24,7 @@
     <uses-feature android:name="android.hardware.bluetooth_le" android:required="false" />
     <application
         android:requestLegacyExternalStorage="true"
-        android:label="uft"
+        android:label="Swoop"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
         <activity

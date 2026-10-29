@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Cross-compile uft for Android (API 26+) with the NDK.
+# Cross-compile swoop for Android (API 26+) with the NDK.
 # usage: scripts/build-android.sh [aarch64-linux-android|armv7-linux-androideabi|x86_64-linux-android]...
 set -euo pipefail
 
@@ -27,5 +27,5 @@ for target in "$@"; do
     T="${t^^}"
     export "CC_$t=$clang" "AR_$t=$bin/llvm-ar" "CARGO_TARGET_${T}_LINKER=$clang"
     cargo build --release --locked --target "$target"
-    ls -l "target/$target/release/uft"
+    ls -l "target/$target/release/swoop"
 done

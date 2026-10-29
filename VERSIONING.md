@@ -1,6 +1,6 @@
 # Versioning
 
-How ultra-fast-data-transfer (app name still to be decided) gets its version numbers. CI will follow these rules;
+How Swoop gets its version numbers. CI will follow these rules;
 people and AI assistants pick the commit type.
 
 ## Versions
@@ -16,15 +16,15 @@ from the commit types below. **Never set or change a version by hand.**
 | `feat!:` (breaking) | a release right away, with any betas | `2.0.0` |
 | `docs:`, `ci:`, `test:` | nothing | — |
 
-- **One version for everything.** The Linux app, the Android app and the `uft` command-line tool share the core and
+- **One version for everything.** The Linux app, the Android app and the `swoop` command-line tool share the core and
   the protocol, so one tag (`v1.1.0`) covers all of them, and everything built from it shows the same version.
 - Normal updates install only releases. Betas are for testing, and users must ask for them:
 
   | Platform | Beta | Release |
   |---|---|---|
-  | Linux | GitHub pre-release | GitHub release (tarball, AppImage, Flatpak bundle), AUR (`uft-bin`), Flathub (later) |
+  | Linux | GitHub pre-release | GitHub release (tarball, AppImage, Flatpak bundle), AUR (`swoop-bin`), Flathub (later) |
   | Android | beta APK on GitHub | APK on GitHub, F-Droid (later) |
-  | `uft` CLI | GitHub pre-release (Linux and Android binaries) | GitHub release |
+  | `swoop` CLI | GitHub pre-release (Linux and Android binaries) | GitHub release |
 
 - Betas stay on the Releases page, marked "Pre-release". A release has all the changes of the betas before it.
 - Versions only go up. A released version never changes: if it's wrong, the next one fixes it.
@@ -79,7 +79,7 @@ The user must **do something** after updating, or something they used stops work
   [The protocol version is different](#the-protocol-version-is-different))
 - a message or field is removed from the protocol in [`core/src/proto.rs`](core/src/proto.rs)
 - a setting is renamed or removed, or its meaning changes
-- a `uft` command or flag, or a core API used by the apps, is renamed or removed
+- a `swoop` command or flag, or a core API used by the apps, is renamed or removed
 - a platform or OS version is no longer supported (for example, raising the minimum above Android 8)
 - old saved data (trusted devices, transfer history, resume state of unfinished transfers) can't be read anymore
 - a feature is removed
@@ -94,7 +94,7 @@ BREAKING CHANGE: devices paired before 2.0 must be paired again. Open the app on
 
 Something **new** the user can see or use, where nothing old breaks:
 
-- a new screen, button, menu item, `uft` command or flag
+- a new screen, button, menu item, `swoop` command or flag
 - a new setting (with a default that breaks nothing)
 - support for something new (a connection type such as hotspot, Wi-Fi Direct or Bluetooth discovery, a platform or
   OS version)
@@ -203,26 +203,27 @@ hand** (Actions ▸ version ▸ Run workflow, with `bump`: `auto`, `major`, `min
 1. Set the version from the tag with `set-version.sh` (a beta is only a tag, so this happens at build time and isn't
    committed).
 2. Build:
-   - **Linux:** `uft-linux-x86_64.tar.gz`, `uft-linux-aarch64.tar.gz` (glibc 2.35 and newer), each unpacking into
-     a prefix: `bin/uft`, the app (`bin/uft-app`, `lib/uft/`) and `share/applications/uft.desktop`. The same
-     files as `uft-x86_64.AppImage` and `uft-aarch64.AppImage`, and `uft-x86_64.flatpak`
-     ([`packaging/flatpak`](packaging/flatpak), app id `dev.uft.uft`).
-   - **Android:** `uft-android.apk` (the app; arm64, armv7 and x86_64), and `uft-android-aarch64.tar.gz` (the
-     `uft` command, for Termux).
+   - **Linux:** `swoop-linux-x86_64.tar.gz`, `swoop-linux-aarch64.tar.gz` (glibc 2.35 and newer), each unpacking into
+     a prefix: `bin/swoop`, the app (`bin/swoop-app`, `lib/swoop/`) and
+     `share/applications/io.github.anil0403.swoop.desktop`. The same files as `swoop-x86_64.AppImage` and
+     `swoop-aarch64.AppImage`, and `swoop-x86_64.flatpak`
+     ([`packaging/flatpak`](packaging/flatpak), app id `io.github.anil0403.swoop`).
+   - **Android:** `swoop-android.apk` (the app; arm64, armv7 and x86_64), and `swoop-android-aarch64.tar.gz` (the
+     `swoop` command, for Termux).
    - **APK signing:** with the release key from the repository secrets `ANDROID_KEYSTORE` (the `.jks` file,
      base64), `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS` and `ANDROID_KEY_PASSWORD`, added by the owner.
      Without them the release has no APK: Android only installs an update signed with the same key, so the key
      must stay the same forever, and never be in the repository. To make one (keep it and its passwords safe):
-     `keytool -genkeypair -v -keystore uft-release.jks -keyalg RSA -keysize 4096 -validity 36500 -alias uft`,
-     then `base64 -w0 uft-release.jks` is the value of `ANDROID_KEYSTORE`.
+     `keytool -genkeypair -v -keystore swoop-release.jks -keyalg RSA -keysize 4096 -validity 36500 -alias swoop`,
+     then `base64 -w0 swoop-release.jks` is the value of `ANDROID_KEYSTORE`.
 3. Upload (after the owner approves, if the `release` environment has required reviewers) the files and
    `SHA256SUMS` to the GitHub release, making a draft first if `version.yml` didn't.
 4. Publish the draft. A release is marked "latest"; a beta never is, and stays a pre-release. The install commands
    in the [README](README.md#install) use `releases/latest`, so they always get the newest release, never a beta.
 5. **AUR (releases only, not betas):** set `pkgver` in [`packaging/aur/PKGBUILD`](packaging/aur/PKGBUILD), take the
-   checksums of the uploaded tarballs and push `uft-bin` to the AUR, with the SSH key in the repository secret
+   checksums of the uploaded tarballs and push `swoop-bin` to the AUR, with the SSH key in the repository secret
    `AUR_SSH_PRIVATE_KEY`, added by the owner (its public half goes in the owner's AUR account, which must own or
-   first create `uft-bin`). Without it the step is skipped with a warning. Flathub and F-Droid are later, by hand.
+   first create `swoop-bin`). Without it the step is skipped with a warning. Flathub and F-Droid are later, by hand.
 
 **Updates:** the apps work offline and need no internet to transfer. Whether they check GitHub for updates when
 online is still open; package managers (AUR, Flatpak, F-Droid) update by themselves.

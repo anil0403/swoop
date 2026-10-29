@@ -1,4 +1,4 @@
-# Ultra-fast offline transfer — Plan
+# Swoop: ultra-fast offline transfer — Plan
 
 App name: **TBD** (needed for mDNS service type, package id, BLE UUID).
 
@@ -175,8 +175,9 @@ BLE contract (both platforms):
   (nmcli, iw, dnsmasq). Flathub later: needs a real app id, AppStream metainfo, a license and screenshots.
 - [ ] 7.7 AUR `uft-bin` (`packaging/aur/PKGBUILD`, builds with makepkg against v1.5.0): pushed by `release.yml` once the
   owner adds `AUR_SSH_PRIVATE_KEY` (VERSIONING.md).
-- [ ] 7.8 Owner: license MIT ✅; the app name and ids (`dev.uft.uft`
-  placeholder), the APK and AUR secrets. F-Droid later.
+- [x] 7.8 License MIT; name Swoop (`swoop` command, app id `io.github.anil0403.swoop`). The crate, protocol strings,
+  config dir and `.uftpart` files keep `uft` (internal; renaming them would break pairing and resume).
+- [ ] 7.9 Owner: the APK and AUR secrets. F-Droid later.
 
 ## Test matrix (each release)
 4 pairings × {router Wi-Fi, one side wired, Android hotspot, Linux hotspot, isolated guest network, no network (BLE)} × hardware classes {budget Android, mid-range Android, flagship Android, Linux Intel Wi-Fi, Linux Realtek/MediaTek, Raspberry Pi 4/5, wired 1/2.5/10 GbE}.

@@ -12,7 +12,7 @@ sudo -n true
 lsmod | grep -q '^mac80211_hwsim' && { echo "mac80211_hwsim is already loaded; unload it first" >&2; exit 1; }
 BT_STORE='/var/lib/bluetooth/00:AA:01:*' # btvirt's addresses
 cleanup() {
-  nmcli connection delete uft-host uft-join > /dev/null 2>&1 || true
+  nmcli connection delete swoop-host swoop-join > /dev/null 2>&1 || true
   [ -n "${BTVIRT_PID:-}" ] && sudo -n kill "$BTVIRT_PID" 2> /dev/null
   sudo -n modprobe -r mac80211_hwsim 2> /dev/null || true
   sudo -n sh -c "sleep 1; rm -rf $BT_STORE"

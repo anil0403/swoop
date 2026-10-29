@@ -21,7 +21,7 @@ class TransferService : Service() {
         )
         val n = Notification.Builder(this, "uft")
             .setSmallIcon(android.R.drawable.stat_sys_download_done)
-            .setContentTitle("uft")
+            .setContentTitle("Swoop")
             .setContentText("Visible to nearby devices")
             .setContentIntent(open)
             .setOngoing(true)

@@ -6,14 +6,14 @@ use crate::frb_generated::StreamSink;
 
 #[derive(Clone, Debug)]
 pub enum BleEvent {
-    /// A uft device advertising nearby. `id` is its Bluetooth address, `fp` the first 16 hex of its fingerprint.
+    /// A Swoop device advertising nearby. `id` is its Bluetooth address, `fp` the first 16 hex of its fingerprint.
     Seen { id: String, name: String, fp: String },
     /// Another device wrote an invite to us (JSON, see PLAN.md).
     Invite { json: String },
 }
 
 /// Advertises this device (`fp`: its fingerprint, the first 16 hex are sent), serves the invite characteristic and
-/// scans for other uft devices, until the app exits or the stream is dropped. Call once. Fails when Bluetooth is
+/// scans for other Swoop devices, until the app exits or the stream is dropped. Call once. Fails when Bluetooth is
 /// missing or off.
 pub fn ble_start(fp: String, name: String, sink: StreamSink<BleEvent>) -> Result<(), String> {
     #[cfg(target_os = "linux")]
@@ -239,7 +239,7 @@ mod ble {
         Ok(())
     }
 
-    /// A uft device. At the start BlueZ also lists the ones it saw in the last minute or so.
+    /// A Swoop device. At the start BlueZ also lists the ones it saw in the last minute or so.
     // ponytail: one D-Bus call per advertisement of any device nearby; read ServiceData from the change signal
     // itself if that ever shows up in a crowded room.
     async fn seen(adapter: &Adapter, addr: Address) -> Option<BleEvent> {
@@ -280,7 +280,7 @@ mod ble {
                 }
             }
         }
-        Err("that device has no uft invite service".into())
+        Err("that device has no Swoop invite service".into())
     }
 }
 
@@ -294,8 +294,8 @@ mod nm {
     use std::thread;
     use std::time::{Duration, Instant};
 
-    pub(super) const HOST: &str = "uft-host";
-    pub(super) const JOIN: &str = "uft-join";
+    pub(super) const HOST: &str = "swoop-host";
+    pub(super) const JOIN: &str = "swoop-join";
 
     fn nmcli(args: &[&str]) -> Result<String, String> {
         let out = Command::new("nmcli")
@@ -345,7 +345,7 @@ mod nm {
             return Err("hosting a network needs dnsmasq; install it".into());
         }
         let wifi = Wifi {
-            ssid: format!("uft-{}", random_hex(2)),
+            ssid: format!("swoop-{}", random_hex(2)),
             pass: random_hex(8),
             sec: "wpa2".into(),
         };
@@ -479,7 +479,7 @@ mod tests {
         assert!(ip.contains("inet 10.42.0."), "{ip}");
         let cons = std::process::Command::new("nmcli").args(["-t", "-f", "NAME", "connection"]).output();
         let cons = String::from_utf8_lossy(&cons.unwrap().stdout).into_owned();
-        assert!(!cons.lines().any(|c| c.starts_with("uft-")), "{cons}");
+        assert!(!cons.lines().any(|c| c.starts_with("swoop-")), "{cons}");
     }
 
     fn next(rx: &Receiver<BleEvent>, want: impl Fn(&BleEvent) -> bool) -> BleEvent {
