@@ -92,7 +92,7 @@ Every device is the same peer: announces itself, listens while receiving is enab
 - [x] 1.6 Resume from verified chunks (state file per partial file; finished files skipped).
 - [x] 1.7 Multi-stream striping by chunk + adaptive stream controller.
 - [x] 1.8 Small files: one shared chunk queue, no per-file round trips (2,000-file test; 100k run pending).
-- [ ] 1.9 Capability probe: AES detection + cipher selection ✅; link info on Linux pending (Phase 6 diagnostics).
+- [x] 1.9 Capability probe: AES detection + cipher selection; link info (Phase 6, `link.rs`).
 - [x] 1.10 Bench modes: `uft bench` (mem→loopback→null), `send --synthetic` + `recv --null` (mem→net→null), `send`/`recv` (disk→disk, full).
 - [ ] 1.11 CI runs build, tests, clippy, fmt and the bench (informational) ✅; hard >5% gate needs stable self-hosted hardware.
 - [ ] 1.12 Android aarch64 build ✅ (CI + local); run in Termux for phone engine numbers.
@@ -149,6 +149,21 @@ BLE contract (both platforms):
   BLE + invite + hotspot ✅, join stops at the system dialog (untapped); real devices (all 4 pairings) with no router pending.
 - [ ] 5.5 Later: Wi-Fi Direct (when neither side can host), the receiver hosting when the sender can't, 5/6 GHz band choice
   from link info, QR code instead of BLE for devices without Bluetooth.
+
+## Phase 6 tasks: hardening + diagnostics
+- [x] 6.1 Cancel a send (`SendOptions.cancel`, app Cancel button); the receiver keeps what arrived and the same send resumes.
+- [x] 6.2 Path failover (app bridge): a send that drops (reset, timeout, unreachable) is retried for 2 min since its last
+  progress, on whatever address a rescan finds for the same fingerprint; resumed offers from a device accepted in the last
+  30 min pass without asking again.
+- [x] 6.3 Refuse offers that don't fit the free space, or 4 GB+ files on FAT32, before asking the user.
+- [x] 6.4 Link diagnostics (`core/src/link.rs`): each device announces its link (Linux `iw`/sysfs, Android
+  `WifiManager`); the device list shows the peer's link and expected speed, a finished send shows both links and one tip.
+- [x] 6.5 Resume state is saved off the progress loop: a `syncfs` behind a busy disk took over 30 s and the sender gave up.
+- [x] 6.6 Loopback, laptop NVMe: 50 GB file, receiver killed (`-9`) at 23 GB, restarted, the same send resumed 18.4 GB and
+  finished byte-identical; 10,000 photo-sized files (0.3–4 MB, 21 GB, 20 folders) arrived identical. Both disk-bound
+  (~120 MB/s average once the page cache fills).
+- [ ] 6.7 Failover across real paths (Wi-Fi ↔ Ethernet, router ↔ hotspot) and app-kill on a phone: on real devices.
+- [ ] 6.8 Diagnostics on the receiving side (it doesn't scan, so it knows the sender's link only if it saw an announce).
 
 ## Release tasks (Phase 7, see VERSIONING.md)
 - [x] 7.1 `release.yml`: on each `v*` tag, `uft` tarballs (Linux x86_64 + aarch64, Android aarch64) and `SHA256SUMS`; one-line install commands in README.
