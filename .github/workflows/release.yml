@@ -50,7 +50,8 @@ jobs:
             cargo build --release --locked --target ${{ matrix.target }}
           fi
           # Laid out like a prefix (bin/...) so it unpacks straight into ~/.local or Termux's $PREFIX.
-          mkdir -p ../pkg/bin ../dist
+          mkdir -p ../pkg/bin ../pkg/share/licenses/uft ../dist
+          cp ../LICENSE ../pkg/share/licenses/uft/
           cp target/${{ matrix.target }}/release/uft ../pkg/bin/
       - name: app
         if: ${{ !contains(matrix.target, 'android') }}

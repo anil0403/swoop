@@ -6,7 +6,7 @@ pkgrel=1
 pkgdesc='Offline file transfer between Linux and Android at the full speed of the local link'
 arch=(x86_64 aarch64)
 url=https://github.com/anil0403/ultra-fast-data-transfer
-license=(unknown)
+license=(MIT)
 depends=(gtk3 dbus)
 optdepends=(
   'bluez: find devices with no shared network'
@@ -27,4 +27,5 @@ package() {
   cp -r lib/uft "$pkgdir/usr/lib/uft"
   ln -s /usr/lib/uft/uft-app "$pkgdir/usr/bin/uft-app"
   install -Dm644 share/applications/uft.desktop -t "$pkgdir/usr/share/applications"
+  install -Dm644 share/licenses/uft/LICENSE -t "$pkgdir/usr/share/licenses/$pkgname"
 }
