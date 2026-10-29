@@ -145,13 +145,15 @@ jobs:
             export UFT_KEYSTORE=$RUNNER_TEMP/release.jks
             base64 -d <<< "$KEYSTORE" > "$UFT_KEYSTORE"
           fi
-          # Phones only: x86_64 is for emulators.
-          flutter build apk --release --target-platform android-arm,android-arm64
-          mkdir -p ../dist && cp build/app/outputs/flutter-apk/app-release.apk ../dist/swoop-android.apk
+          # One APK per CPU type, each half the size of a combined one. x86_64 is for emulators only.
+          flutter build apk --release --split-per-abi --target-platform android-arm,android-arm64
+          mkdir -p ../dist
+          cp build/app/outputs/flutter-apk/app-arm64-v8a-release.apk ../dist/swoop-android.apk
+          cp build/app/outputs/flutter-apk/app-armeabi-v7a-release.apk ../dist/swoop-android-armv7.apk
       - uses: actions/upload-artifact@v4
         with:
           name: swoop-android-apk
-          path: dist/swoop-android.apk
+          path: dist/swoop-android*.apk
           if-no-files-found: ignore
 
   # ponytail: x86_64 only; an aarch64 bundle needs an arm runner in this container.

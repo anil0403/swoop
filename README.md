@@ -25,7 +25,7 @@ or from the AUR on Arch (`swoop-bin`, e.g. `yay -S swoop-bin`), all on the
 [releases](https://github.com/anil0403/swoop/releases/latest) page.
 
 Android app (8.0 and newer): open `https://github.com/anil0403/swoop/releases/latest/download/swoop-android.apk`
-on the phone, or from a computer with `adb`. For now each release's APK is signed with a different temporary key: to
+on the phone (`swoop-android-armv7.apk` instead on an old 32-bit phone), or from a computer with `adb`. For now each release's APK is signed with a different temporary key: to
 update, uninstall the old one first (you pair devices again).
 
 ```sh
@@ -78,7 +78,7 @@ The Android app (also needs a JDK 17+ and the Android SDK; set `JAVA_HOME`):
 
 ```sh
 cd app
-flutter build apk --release   # -> build/app/outputs/flutter-apk/app-release.apk (arm64, armv7, x86_64)
+flutter build apk --release --split-per-abi   # -> build/app/outputs/flutter-apk/app-arm64-v8a-release.apk, …
 emulator -avd NAME -no-window & ./test-android.sh   # full flow, app ↔ CLI on this computer (or a phone over adb)
 ```
 
