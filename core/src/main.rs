@@ -414,6 +414,8 @@ fn device_name() -> String {
         .filter_map(|p| std::fs::read_to_string(p).ok())
         .map(|s| s.trim().to_string())
         .find(|s| !s.is_empty())
+        // Windows
+        .or_else(|| std::env::var("COMPUTERNAME").ok().filter(|s| !s.is_empty()))
         .unwrap_or_else(|| "swoop".into())
 }
 
