@@ -156,6 +156,45 @@ jobs:
           path: dist/swoop-android*.apk
           if-no-files-found: ignore
 
+  windows:
+    runs-on: windows-latest
+    steps:
+      # Keep the repository's LF line endings (the runner's git turns them into CRLF), so set-version.sh runs.
+      - run: git config --global core.autocrlf false
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TAG }}
+      - if: env.TAG != ''
+        run: .github/set-version.sh "$TAG"
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            core
+            app/rust -> ../build/windows/x64/plugins/uft_bridge/cargokit_build
+          key: x86_64-pc-windows-msvc
+      - run: echo "version=$(cat app/.flutter-version)" >> "$GITHUB_OUTPUT"
+        id: flutter
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ steps.flutter.outputs.version }}
+          cache: true
+      - name: build
+        run: |
+          (cd core && cargo build --release --locked)
+          (cd app && flutter build windows --release)
+          # Files at the top, like the Linux archive: the app with its DLLs and data/, and swoop.exe.
+          mkdir -p pkg dist
+          cp -r app/build/windows/x64/runner/Release/. pkg/
+          cp core/target/release/swoop.exe LICENSE pkg/
+          # The Visual C++ runtime, for PCs that don't have it installed.
+          cp /c/Windows/System32/{msvcp140,vcruntime140,vcruntime140_1}.dll pkg/
+          cd pkg && 7z a -tzip ../dist/swoop-windows-x86_64.zip *
+      - uses: actions/upload-artifact@v4
+        with:
+          name: swoop-windows-x86_64
+          path: dist/*
+
   # ponytail: x86_64 only; an aarch64 bundle needs an arm runner in this container.
   flatpak:
     needs: build
@@ -178,7 +217,7 @@ jobs:
           cache: false
 
   publish:
-    needs: [build, apk, flatpak]
+    needs: [build, apk, windows, flatpak]
     if: github.event_name == 'push' || inputs.tag != ''
     runs-on: ubuntu-latest
     environment: release
