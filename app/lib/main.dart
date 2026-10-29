@@ -1515,16 +1515,16 @@ class HomeState extends State<Home> {
   Widget hint(ThemeData theme) => Padding(
     padding: const EdgeInsets.fromLTRB(4, 8, 4, 0),
     child: Text(
-      Platform.isLinux
+      !Platform.isAndroid
           ? 'Nothing sent yet. Tap a device to pick files, or drop files on this window.'
           : 'Nothing sent yet. Tap a device to pick files.',
       style: theme.textTheme.bodyMedium?.copyWith(color: theme.colorScheme.onSurfaceVariant),
     ),
   );
 
-  /// Linux: files or folders dropped on the window wait for a device tap.
+  /// Desktop: files or folders dropped on the window wait for a device tap.
   Widget dropZone(ThemeData theme, Widget child) {
-    if (!Platform.isLinux) return child;
+    if (Platform.isAndroid) return child;
     final c = theme.colorScheme;
     return DropTarget(
       onDragEntered: (_) => setState(() => dragging = true),
