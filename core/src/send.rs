@@ -1,6 +1,7 @@
 //! Sender: offer files, then stripe chunks over adaptive parallel TLS streams.
 
 use crate::VERSION;
+use crate::os::{self, FileExt};
 use crate::pair;
 use crate::progress::{Meter, Snapshot};
 use crate::proto::{self, CHUNK_SIZE, FileEntry, Msg, Role, bad, chunk_count};
@@ -11,7 +12,6 @@ use std::ffi::OsStr;
 use std::fs::{self, File};
 use std::io::{self, BufWriter, Write};
 use std::net::{Shutdown, SocketAddr, TcpStream};
-use std::os::unix::fs::FileExt;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::mpsc::{self, Receiver, SyncSender};
@@ -370,7 +370,7 @@ fn read_chunks(job: &Job, tx: SyncSender<Chunk>, pool: Receiver<Vec<u8>>) -> io:
             Some(path) => {
                 if open.as_ref().is_none_or(|(f, _)| *f != file) {
                     let f = open_src(path)?;
-                    let _ = rustix::fs::fadvise(&f, 0, None, rustix::fs::Advice::Sequential);
+                    os::advise_sequential(&f);
                     open = Some((file, f));
                 }
                 // Same length as last time for all but a file's final chunk, so no zero-fill.

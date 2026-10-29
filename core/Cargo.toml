@@ -12,7 +12,12 @@ path = "src/main.rs"
 blake3 = "1.8.7"
 if-addrs = "0.15.0"
 rcgen = "0.14.10"
-rustix = { version = "1.1.6", features = ["fs"] }
 rustls = "0.23.46"
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.154"
+
+[target.'cfg(unix)'.dependencies]
+rustix = { version = "1.1.6", features = ["fs"] }
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61.2", features = ["Win32_Storage_FileSystem"] }

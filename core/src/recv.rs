@@ -1,6 +1,7 @@
 //! Receiver: accept sessions, verify chunks, write files, resume.
 
 use crate::VERSION;
+use crate::os::{self, FileExt};
 use crate::pair;
 use crate::proto::{self, Caps, FileEntry, Frame, Msg, Role, bad, chunk_count};
 use crate::tls::{self, Identity};
@@ -10,7 +11,6 @@ use std::ffi::OsString;
 use std::fs::{self, File, OpenOptions};
 use std::io::{self, BufRead, BufReader, Read, Write};
 use std::net::{IpAddr, Ipv4Addr, TcpListener, TcpStream};
-use std::os::unix::fs::FileExt;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::mpsc::{Receiver, Sender, channel, sync_channel};
@@ -390,7 +390,11 @@ impl Session {
         if snap.is_empty() {
             return Ok(());
         }
-        syncfs(&self.dir)?;
+        let parts: Vec<&Path> = snap
+            .iter()
+            .map(|(i, _)| self.files[*i].part.as_path())
+            .collect();
+        os::sync(&self.dir, &parts).map_err(at(&self.dir))?;
         for (i, done) in &snap {
             let t = &self.files[*i];
             let ps = PartState {
@@ -419,24 +423,6 @@ fn at(path: &Path) -> impl Fn(io::Error) -> io::Error + '_ {
     move |e| io::Error::new(e.kind(), format!("{}: {e}", path.display()))
 }
 
-// Android shared storage (FUSE) sometimes says ENOENT, or EACCES (seen on API 37), for a folder
-// that exists and was just written to, on open or on syncfs; a full sync() is slower but just as
-// safe.
-fn syncfs(dir: &Path) -> io::Result<()> {
-    match File::open(dir).and_then(|f| Ok(rustix::fs::syncfs(f)?)) {
-        Err(e)
-            if matches!(
-                e.kind(),
-                io::ErrorKind::NotFound | io::ErrorKind::PermissionDenied
-            ) =>
-        {
-            rustix::fs::sync();
-            Ok(())
-        }
-        r => r.map_err(at(dir)),
-    }
-}
-
 fn open_part(t: &Target) -> io::Result<File> {
     if let Some(p) = t.part.parent() {
         fs::create_dir_all(p)?;
@@ -448,17 +434,14 @@ fn open_part(t: &Target) -> io::Result<File> {
         .open(&t.part)
         .map_err(at(&t.part))?;
     if f.metadata()?.len() < t.size {
-        use rustix::io::Errno;
-        match rustix::fs::fallocate(&f, rustix::fs::FallocateFlags::empty(), 0, t.size) {
-            Err(Errno::OPNOTSUPP | Errno::NOSYS) => f.set_len(t.size)?,
-            r => r?,
-        }
+        os::preallocate(&f, t.size)?;
     }
     Ok(f)
 }
 
 /// Sets mtime and renames the part into place, picking `name (n).ext` on conflict.
-// ponytail: no per-file fsync; one syncfs at session end covers data and renames.
+// ponytail: no per-file fsync on Unix; one syncfs at session end covers data and renames.
+// Windows has no syncfs, so each file is flushed here, before its rename.
 fn finalize(t: &Target) -> io::Result<()> {
     if let Some(p) = t.part.parent() {
         fs::create_dir_all(p)?;
@@ -480,6 +463,8 @@ fn finalize(t: &Target) -> io::Result<()> {
             r => r?,
         }
     }
+    #[cfg(windows)]
+    f.sync_all()?;
     drop(f);
     let mut dest = t.dest.clone();
     // ponytail: exists-then-rename races with other writers into the same dir; RENAME_NOREPLACE if it matters.
@@ -648,17 +633,14 @@ fn plan(ctx: &Ctx, peer_fp: String, chunk_size: u64, files: &[FileEntry]) -> Res
 /// Room for `need` more bytes in `dir`, and no file of 4 GiB or more on FAT32.
 // ponytail: Android shared storage is FUSE, so an SD card's FAT32 isn't seen there; the
 // write then fails at 4 GiB with an error instead of this message.
-// f_type's integer type differs between targets.
-#[allow(clippy::unnecessary_cast)]
 fn fits(dir: &Path, need: u64, big: Option<(&PathBuf, u64)>) -> Result<(), String> {
     // The folder may not exist yet; its nearest existing parent is on the same disk.
     let Some(d) = dir.ancestors().find(|d| d.exists()) else {
         return Ok(());
     };
-    let Ok(fs) = rustix::fs::statvfs(d) else {
+    let Some(free) = os::free_space(d) else {
         return Ok(());
     };
-    let free = fs.f_bavail.saturating_mul(fs.f_frsize);
     if need > free {
         return Err(format!(
             "not enough space: needs {} MB, {} MB free",
@@ -666,9 +648,8 @@ fn fits(dir: &Path, need: u64, big: Option<(&PathBuf, u64)>) -> Result<(), Strin
             free / 1_000_000
         ));
     }
-    const MSDOS_SUPER_MAGIC: i64 = 0x4d44;
     if let Some((dest, size)) = big
-        && rustix::fs::statfs(d).is_ok_and(|s| s.f_type as i64 == MSDOS_SUPER_MAGIC)
+        && os::is_fat(d)
     {
         return Err(format!(
             "the save folder is on FAT32, which can't hold files of 4 GB or more ({} is {} MB)",
@@ -853,7 +834,8 @@ fn progress<S: Write>(
         });
         if complete {
             if !sess.null_sink {
-                syncfs(&sess.dir)?;
+                // Windows: finalize() flushed each file, so there's nothing left to list.
+                os::sync(&sess.dir, &[]).map_err(at(&sess.dir))?;
             }
             send(s, &Msg::Done)?;
             let bytes = sess.written.load(Ordering::Relaxed);
