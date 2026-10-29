@@ -5,10 +5,11 @@ use std::net::{IpAddr, Ipv4Addr, SocketAddr, TcpListener, ToSocketAddrs, UdpSock
 use std::path::PathBuf;
 use std::process::ExitCode;
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use uft::DEFAULT_PORT;
 use uft::discover::{self, Device, Found};
+use uft::link;
 use uft::pair::{self, Trust};
 use uft::progress::Snapshot;
 use uft::recv::{self, Offer, RecvEvent, RecvOptions};
@@ -430,16 +431,26 @@ fn run(cmd: Cmd) -> Res<()> {
             for ip in discover::local_ips() {
                 println!("  link: uft://{ip}:{port}/{fp}");
             }
-            let me = Device {
+            let mut me = Device {
                 fp: fp.clone(),
                 name: name.clone(),
                 os: std::env::consts::OS.into(),
                 port,
+                link: None,
             };
             match UdpSocket::bind((Ipv4Addr::UNSPECIFIED, port)) {
                 Ok(sock) => {
                     std::thread::spawn(move || {
-                        if let Err(e) = discover::respond(sock, &me) {
+                        // The link is re-read at most every 10 s, not on every query (`iw` runs).
+                        let mut read: Option<Instant> = None;
+                        let me = move || {
+                            if read.is_none_or(|t| t.elapsed() >= Duration::from_secs(10)) {
+                                me.link = link::local();
+                                read = Some(Instant::now());
+                            }
+                            me.clone()
+                        };
+                        if let Err(e) = discover::respond(sock, me) {
                             eprintln!("uft: discovery stopped: {e}");
                         }
                     });
@@ -505,6 +516,7 @@ fn run(cmd: Cmd) -> Res<()> {
             let opts = SendOptions {
                 streams,
                 name: device_name(),
+                cancel: None,
             };
             let stats = send::send(addr, &id, &fp, &sources, &opts, print_status)?;
             eprintln!();
@@ -533,6 +545,7 @@ fn run(cmd: Cmd) -> Res<()> {
             let opts = SendOptions {
                 streams,
                 name: "bench-send".into(),
+                cancel: None,
             };
             let s = send::send(addr, &tx, &rx_fp, &sources, &opts, print_status)?;
             eprintln!();

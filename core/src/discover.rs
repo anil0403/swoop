@@ -8,10 +8,15 @@
 //!
 //! ```text
 //! datagram = JSON  {"type":"query","v":1}
-//!                  {"type":"announce","v":1,"fp":"…","name":"…","os":"linux","port":47474}
+//!                  {"type":"announce","v":1,"fp":"…","name":"…","os":"linux","port":47474,
+//!                   "link":{…}}                       link: optional (`link::Link`), newer peers only
 //! ```
+//!
+//! Unknown fields are ignored and missing optional ones default, so older and newer peers parse
+//! each other's datagrams.
 
 use crate::VERSION;
+use crate::link::Link;
 use serde::{Deserialize, Serialize};
 use std::io;
 use std::net::{Ipv4Addr, SocketAddr, UdpSocket};
@@ -39,6 +44,9 @@ pub struct Device {
     pub os: String,
     /// TCP port of the receiver.
     pub port: u16,
+    /// Its main network link, for diagnostics.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub link: Option<Link>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -61,12 +69,9 @@ enum Packet {
     },
 }
 
-/// Answers queries on `sock` (bound to `0.0.0.0:PORT`) forever.
-pub fn respond(sock: UdpSocket, me: &Device) -> io::Result<()> {
-    let reply = serde_json::to_vec(&Packet::Announce {
-        v: VERSION,
-        device: me.clone(),
-    })?;
+/// Answers queries on `sock` (bound to `0.0.0.0:PORT`) forever. `me` is called per query, so
+/// the announce follows changes (the link); keep it cheap.
+pub fn respond(sock: UdpSocket, mut me: impl FnMut() -> Device) -> io::Result<()> {
     sock.set_read_timeout(Some(REJOIN))?;
     let mut joined: Option<Instant> = None;
     let mut buf = [0u8; 1024];
@@ -81,6 +86,10 @@ pub fn respond(sock: UdpSocket, me: &Device) -> io::Result<()> {
         match sock.recv_from(&mut buf) {
             Ok((n, src)) => {
                 if let Ok(Packet::Query { .. }) = serde_json::from_slice(&buf[..n]) {
+                    let reply = serde_json::to_vec(&Packet::Announce {
+                        v: VERSION,
+                        device: me(),
+                    })?;
                     let _ = sock.send_to(&reply, src);
                 }
             }
@@ -248,7 +257,7 @@ fn interfaces() -> Vec<Iface> {
 
 // ponytail: Ethernet > Wi-Fi > rest; ranking Wi-Fi bands (6 > 5 > 2.4 GHz) needs nl80211 link
 // info (Phase 6 diagnostics).
-fn rank(name: &str) -> u8 {
+pub(crate) fn rank(name: &str) -> u8 {
     let sys = Path::new("/sys/class/net").join(name);
     if sys.join("wireless").exists() || name.starts_with("wl") {
         1
@@ -294,6 +303,7 @@ mod tests {
             name: "laptop".into(),
             os: "linux".into(),
             port: 4747,
+            link: None,
         }
     }
 
@@ -338,10 +348,59 @@ mod tests {
     }
 
     #[test]
+    fn link_is_compatible_both_ways() {
+        // An old peer's announce (no link) parses.
+        let old = format!(
+            r#"{{"type":"announce","v":1,"fp":"{}","name":"laptop","os":"linux","port":4747}}"#,
+            "ab".repeat(32)
+        );
+        assert_eq!(parse(old.as_bytes()), Some(dev()));
+        // No link: nothing new on the wire.
+        let none = serde_json::to_string(&Packet::Announce {
+            v: 1,
+            device: dev(),
+        })
+        .unwrap();
+        assert!(!none.contains("link"));
+        // With a link it round-trips, and an old peer's Device (no link field) still parses it.
+        let l = Link {
+            kind: "wifi".into(),
+            mhz: Some(5180),
+            mbps: Some(1201),
+            dbm: Some(-59),
+        };
+        let new = Device {
+            link: Some(l),
+            ..dev()
+        };
+        let b = serde_json::to_vec(&Packet::Announce {
+            v: 1,
+            device: new.clone(),
+        })
+        .unwrap();
+        assert_eq!(parse(&b), Some(new));
+        #[derive(Deserialize)]
+        #[serde(tag = "type", rename_all = "snake_case")]
+        enum OldPacket {
+            Announce {
+                #[serde(flatten)]
+                device: OldDevice,
+            },
+        }
+        #[derive(Deserialize)]
+        struct OldDevice {
+            fp: String,
+            port: u16,
+        }
+        let OldPacket::Announce { device } = serde_json::from_slice(&b).unwrap();
+        assert_eq!((device.fp.len(), device.port), (64, 4747));
+    }
+
+    #[test]
     fn finds_a_responder() {
         let sock = UdpSocket::bind((Ipv4Addr::UNSPECIFIED, 0)).unwrap();
         let port = sock.local_addr().unwrap().port();
-        thread::spawn(move || respond(sock, &dev()));
+        thread::spawn(move || respond(sock, dev));
         let start = Instant::now();
         let found = scan(port, Duration::from_secs(5), &[Ipv4Addr::LOCALHOST], |f| {
             f.device == dev()
