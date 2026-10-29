@@ -217,8 +217,8 @@ class HomeState extends State<Home> {
   final ble = <String, direct.BlePeer>{};
   String? bleError;
 
-  /// Senders whose invite this device accepted: their offer needs no second tap.
-  final invited = <String>{};
+  /// An invite dialog is open: more invites meanwhile are dropped, so a nearby device can't stack them.
+  bool inviting = false;
 
   /// Bluetooth devices a direct send is going to; a second tap would take the first one's hotspot down.
   final directing = <String>{};
@@ -380,10 +380,8 @@ class HomeState extends State<Home> {
   void onIncoming(uft.Incoming e) {
     switch (e) {
       case uft.Incoming_Offer():
-        // Accepted with the invite already; TLS proves it's from the device that sent it.
-        invited.remove(e.fingerprint)
-            ? uft.answer(id: e.id, accept: true, always: false)
-            : offer(e);
+        // Asked even after an invite: Bluetooth doesn't prove who sent it, the pairing code does.
+        offer(e);
       case uft.Incoming_Started():
         if (e.fingerprint == joinedFor) {
           joinedSession = e.session;
@@ -713,10 +711,11 @@ class HomeState extends State<Home> {
     }
   }
 
-  /// A sender with no shared network asks this device to join its hotspot; accepting also accepts its files.
+  /// A sender with no shared network asks this device to join its hotspot; its files are asked about after.
   Future<void> onInvite(String json) async {
     final inv = direct.Invite.parse(json);
-    if (inv == null || joinedFor != null || !mounted) return;
+    if (inv == null || joinedFor != null || inviting || !mounted) return;
+    inviting = true;
     final ok = await showDialog<bool>(
       context: context,
       barrierDismissible: false,
@@ -733,15 +732,14 @@ class HomeState extends State<Home> {
         ],
       ),
     );
+    inviting = false;
     if (ok != true) return;
     joinedFor = inv.fp;
-    invited.add(inv.fp);
     try {
       await direct.join(inv.wifi);
       // Back to the usual network if the transfer never starts.
       leaveTimer = Timer(const Duration(minutes: 2), leaveDirect);
     } catch (e) {
-      invited.remove(inv.fp);
       joinedFor = null;
       setState(() => error = "Couldn't join ${inv.name}'s hotspot: ${msg(e)}");
     }
@@ -749,7 +747,6 @@ class HomeState extends State<Home> {
 
   void leaveDirect() {
     leaveTimer?.cancel();
-    if (joinedFor != null) invited.remove(joinedFor);
     joinedFor = joinedSession = null;
     direct.leave();
   }
