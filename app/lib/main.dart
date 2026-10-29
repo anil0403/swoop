@@ -526,6 +526,8 @@ class HomeState extends State<Home> {
       android.invokeMethod('busy', now);
       notify?.cancel();
       notify = now ? Timer.periodic(const Duration(seconds: 1), (_) => showProgress()) : null;
+      // One last update, or the final progress bar stays in the notification.
+      if (!now) showProgress();
     }
     busy = now;
   }
