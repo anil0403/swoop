@@ -309,6 +309,12 @@ class Direct(private val ctx: Context, private val local: (Boolean) -> Unit) : E
         main.postDelayed(timeout, 20_000)
     }
 
+    /** Stops looking for others (the app is out of sight); [retry] starts again. */
+    fun pauseScan() {
+        if (scanning) runCatching { bt?.adapter?.bluetoothLeScanner?.stopScan(scan) }
+        scanning = false
+    }
+
     private fun stopBle() {
         val a = bt?.adapter
         if (scanning) runCatching { a?.bluetoothLeScanner?.stopScan(scan) }
@@ -324,6 +330,7 @@ class Direct(private val ctx: Context, private val local: (Boolean) -> Unit) : E
     // --- Hotspot ---------------------------------------------------------------------------------------------
 
     private var reservation: WifiManager.LocalOnlyHotspotReservation? = null
+    private var closed = false
     /** True while this phone hosts the hotspot. */
     val hostingHotspot get() = reservation != null
     private var hosted: Map<String, String>? = null
@@ -336,6 +343,8 @@ class Direct(private val ctx: Context, private val local: (Boolean) -> Unit) : E
         hosting = result
         val cb = object : WifiManager.LocalOnlyHotspotCallback() {
             override fun onStarted(r: WifiManager.LocalOnlyHotspotReservation) {
+                // The activity went away while it was starting: nobody would ever close it.
+                if (closed) return r.close()
                 reservation = r
                 val creds = if (Build.VERSION.SDK_INT >= 30) {
                     val c = r.softApConfiguration
@@ -494,6 +503,7 @@ class Direct(private val ctx: Context, private val local: (Boolean) -> Unit) : E
 
     /** Everything off, for the activity going away. Leaves the network binding to the caller. */
     fun close() {
+        closed = true
         stopBle()
         if (fp != null) runCatching { ctx.unregisterReceiver(state) }
         fp = null

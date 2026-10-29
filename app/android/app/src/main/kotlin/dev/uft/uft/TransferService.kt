@@ -36,7 +36,8 @@ class TransferService : Service() {
     override fun onTimeout(startId: Int, fgsType: Int) = stopSelf()
 
     companion object {
-        private var running = false
+        var running = false
+            private set
 
         /** The ongoing notification shows [title] with a done/total bar, or the plain text when [title] is null. */
         fun progress(ctx: Context, title: String?, done: Long, total: Long) {

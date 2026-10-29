@@ -13,6 +13,8 @@ import android.net.wifi.WifiManager
 import android.os.Build
 import android.os.Bundle
 import android.os.Environment
+import android.os.Handler
+import android.os.Looper
 import android.os.ParcelFileDescriptor
 import android.os.PowerManager
 import android.provider.DocumentsContract
@@ -65,6 +67,21 @@ class MainActivity : FlutterActivity() {
         bindToLocalNetwork()
         // Keeps the process alive, and receiving, while the app is in the background.
         startForegroundService(Intent(this, TransferService::class.java))
+    }
+
+    override fun onStart() {
+        super.onStart()
+        // Android 15 stops the service after ~6 h a day; opening the app resets that, so start it again.
+        if (!TransferService.running) {
+            runCatching { startForegroundService(Intent(this, TransferService::class.java)) }
+        }
+        direct.retry()
+    }
+
+    override fun onStop() {
+        // Finding devices is for the screen; invites still arrive in the background (advertising stays on).
+        direct.pauseScan()
+        super.onStop()
     }
 
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
@@ -257,11 +274,9 @@ class MainActivity : FlutterActivity() {
                 if (Build.VERSION.SDK_INT >= 29) WifiManager.WIFI_MODE_FULL_LOW_LATENCY else null,
             )
             wifiLocks = modes.map { wifi().createWifiLock(it, "uft").apply { acquire() } }
+            locks.postDelayed(expire, 6 * 3600 * 1000L)
         } else if (!on) {
-            wake?.takeIf { it.isHeld }?.release()
-            wake = null
-            wifiLocks.forEach { if (it.isHeld) it.release() }
-            wifiLocks = emptyList()
+            releaseLocks()
         }
     }
 
@@ -298,7 +313,17 @@ class MainActivity : FlutterActivity() {
         val (result, folder) = picking ?: return
         picking = null
         if (resultCode != RESULT_OK || data == null) return result.success(emptyList<List<String>>())
-        background(result) { if (folder) tree(data.data!!) else uris(data).map { open(it, name(it)) } }
+        background(result) {
+            val got = mutableListOf<List<String>>()
+            try {
+                if (folder) tree(data.data!!, got) else uris(data).forEach { got += open(it, name(it)) }
+                got
+            } catch (e: Exception) {
+                // One that won't open (a Drive doc, too many files): Dart never gets the rest, so close them here.
+                synchronized(fds) { got.forEach { fds.remove(it[0])?.close() } }
+                throw e
+            }
+        }
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -380,10 +405,9 @@ class MainActivity : FlutterActivity() {
         return File(base, id.substringAfter(':', "")).path
     }
 
-    /** Every file under a picked folder, named `folder/sub/file`, and each empty folder as ["", name]. */
-    private fun tree(root: Uri): List<List<String>> {
+    /** Adds every file under a picked folder to [out], named `folder/sub/file`, and each empty folder as ["", name]. */
+    private fun tree(root: Uri, out: MutableList<List<String>>) {
         val rootId = DocumentsContract.getTreeDocumentId(root)
-        val out = mutableListOf<List<String>>()
         // ponytail: one open descriptor per file; folders with more files than the fd limit (~32k) fail.
         fun walk(id: String, rel: String) {
             val before = out.size
@@ -402,7 +426,6 @@ class MainActivity : FlutterActivity() {
             if (out.size == before) out += listOf("", rel)
         }
         walk(rootId, name(DocumentsContract.buildDocumentUriUsingTree(root, rootId)))
-        return out
     }
 
     /** Per process, not per activity: a transfer outlives the activity when the app is swiped away. */
@@ -411,5 +434,17 @@ class MainActivity : FlutterActivity() {
         private val fds = HashMap<String, ParcelFileDescriptor>()
         private var wifiLocks: List<WifiManager.WifiLock> = emptyList()
         private var wake: PowerManager.WakeLock? = null
+        private val locks = Handler(Looper.getMainLooper())
+
+        /** All locks go after 6 h, like the wake lock's own timeout: a transfer orphaned by a closed app can't end them. */
+        private val expire = Runnable { releaseLocks() }
+
+        private fun releaseLocks() {
+            locks.removeCallbacks(expire)
+            wake?.takeIf { it.isHeld }?.release()
+            wake = null
+            wifiLocks.forEach { if (it.isHeld) it.release() }
+            wifiLocks = emptyList()
+        }
     }
 }
