@@ -885,7 +885,13 @@ class HomeState extends State<Home> {
               ),
               child: SelectableText(
                 links.isEmpty ? 'No network address yet' : links.join('\n'),
-                style: const TextStyle(fontFamily: 'monospace', fontSize: 13, height: 1.6),
+                style: const TextStyle(
+                  fontFamily: 'monospace',
+                  // Windows has no "monospace" alias.
+                  fontFamilyFallback: ['Consolas'],
+                  fontSize: 13,
+                  height: 1.6,
+                ),
               ),
             ),
             // A phone's camera opens Swoop from it.
