@@ -233,7 +233,8 @@ fn is_fp(s: &str) -> bool {
     s.len() == 64 && s.bytes().all(|b| b.is_ascii_hexdigit())
 }
 
-/// `$UFT_HOME`, else `$XDG_CONFIG_HOME/uft`, else `$HOME/.config/uft`. Empty values count as unset.
+/// `$UFT_HOME`, else `$XDG_CONFIG_HOME/uft` (`%APPDATA%\uft` on Windows), else `$HOME/.config/uft`.
+/// Empty values count as unset.
 fn config_dir(
     uft_home: Option<OsString>,
     xdg: Option<OsString>,
@@ -261,7 +262,7 @@ fn with_port(host: &str) -> String {
 fn config() -> Res<PathBuf> {
     Ok(config_dir(
         std::env::var_os("UFT_HOME"),
-        std::env::var_os("XDG_CONFIG_HOME"),
+        std::env::var_os(if cfg!(windows) { "APPDATA" } else { "XDG_CONFIG_HOME" }),
         std::env::var_os("HOME"),
     )
     .ok_or("no config dir: set UFT_HOME or HOME")?)
