@@ -18,8 +18,8 @@ use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 pub struct RecvOptions {
-    /// Where received files go.
-    pub dir: PathBuf,
+    /// Where received files go. May be changed while serving: each new offer uses the current one.
+    pub dir: Arc<Mutex<PathBuf>>,
     /// Verify but discard data (benchmarks).
     pub null_sink: bool,
     /// Device name shown to senders.
@@ -102,7 +102,7 @@ pub fn safe_rel_path(path: &str) -> Option<PathBuf> {
 }
 
 struct Ctx {
-    dir: PathBuf,
+    dir: Arc<Mutex<PathBuf>>,
     null_sink: bool,
     name: String,
     accept: Option<Accept>,
@@ -498,6 +498,8 @@ fn plan(ctx: &Ctx, peer_fp: String, chunk_size: u64, files: &[FileEntry]) -> Res
     if files.len() > u32::MAX as usize {
         return Err("too many files".into());
     }
+    // Read once: a change of folder mid-offer doesn't split it.
+    let dir = ctx.dir.lock().unwrap().clone();
     let mut seen = HashSet::new();
     let mut chunks = 0u64;
     let mut targets = Vec::with_capacity(files.len());
@@ -510,7 +512,7 @@ fn plan(ctx: &Ctx, peer_fp: String, chunk_size: u64, files: &[FileEntry]) -> Res
         if chunks > MAX_CHUNKS {
             return Err("offer too large".into());
         }
-        let dest = ctx.dir.join(&rel);
+        let dest = dir.join(&rel);
         let mut part = dest.clone().into_os_string();
         part.push(".uftpart");
         targets.push(Target {
@@ -558,11 +560,11 @@ fn plan(ctx: &Ctx, peer_fp: String, chunk_size: u64, files: &[FileEntry]) -> Res
             .map(|(t, _)| t.size)
             .fold(0u64, u64::saturating_add);
         let big = targets.iter().find(|t| t.size >= 4 << 30);
-        fits(&ctx.dir, need, big.map(|t| (&t.dest, t.size)))?;
+        fits(&dir, need, big.map(|t| (&t.dest, t.size)))?;
     }
     let sess = Session {
         peer_fp,
-        dir: ctx.dir.clone(),
+        dir,
         chunk_size,
         null_sink: ctx.null_sink,
         files: targets,
@@ -878,7 +880,7 @@ mod tests {
         let addr = l.local_addr().unwrap();
         let (tx, rx) = channel();
         let opts = RecvOptions {
-            dir: dir.into(),
+            dir: Arc::new(Mutex::new(dir.into())),
             null_sink,
             name: "rx".into(),
             accept,

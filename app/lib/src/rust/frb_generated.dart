@@ -70,7 +70,7 @@ class RustLib extends BaseEntrypoint<RustLibApi, RustLibApiImpl, RustLibWire> {
   String get codegenVersion => '2.13.0';
 
   @override
-  int get rustContentHash => 657249417;
+  int get rustContentHash => -608884717;
 
   static const kDefaultExternalLibraryLoaderConfig =
       ExternalLibraryLoaderConfig(
@@ -132,6 +132,8 @@ abstract class RustLibApi extends BaseApi {
   void crateApiUftSetLink({String? kind, int? mhz, int? mbps, int? dbm});
 
   void crateApiUftSetReceiving({required bool enabled});
+
+  void crateApiUftSetSaveDir({required String dir});
 
   Future<void> crateApiDirectStopHost();
 }
@@ -648,6 +650,29 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       const TaskConstMeta(debugName: "set_receiving", argNames: ["enabled"]);
 
   @override
+  void crateApiUftSetSaveDir({required String dir}) {
+    return handler.executeSync(
+      SyncTask(
+        callFfi: () {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_String(dir, serializer);
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 18)!;
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_unit,
+          decodeErrorData: null,
+        ),
+        constMeta: kCrateApiUftSetSaveDirConstMeta,
+        argValues: [dir],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiUftSetSaveDirConstMeta =>
+      const TaskConstMeta(debugName: "set_save_dir", argNames: ["dir"]);
+
+  @override
   Future<void> crateApiDirectStopHost() {
     return handler.executeNormal(
       NormalTask(
@@ -656,7 +681,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 18,
+            funcId: 19,
             port: port_,
           );
         },

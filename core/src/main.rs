@@ -469,7 +469,7 @@ fn run(cmd: Cmd) -> Res<()> {
                 Some(Arc::new(move |o: &Offer| confirm(o, &fp, &trust)))
             };
             let opts = RecvOptions {
-                dir,
+                dir: Arc::new(Mutex::new(dir)),
                 null_sink: null,
                 name,
                 accept,
@@ -532,7 +532,7 @@ fn run(cmd: Cmd) -> Res<()> {
             let listener = TcpListener::bind("127.0.0.1:0")?;
             let addr = listener.local_addr()?;
             let opts = RecvOptions {
-                dir: PathBuf::new(),
+                dir: Default::default(),
                 null_sink: true,
                 name: "bench-recv".into(),
                 accept: None,

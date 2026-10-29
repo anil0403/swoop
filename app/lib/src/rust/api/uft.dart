@@ -51,6 +51,10 @@ Stream<List<Peer>> scan({required int secs}) =>
 Stream<Incoming> receive({required String dir}) =>
     RustLib.instance.api.crateApiUftReceive(dir: dir);
 
+/// Where received files go from the next offer on; a transfer already running keeps its folder.
+void setSaveDir({required String dir}) =>
+    RustLib.instance.api.crateApiUftSetSaveDir(dir: dir);
+
 /// The user's answer to an `Incoming::Offer`; `always` also trusts the device from now on.
 void answer({
   required PlatformInt64 id,

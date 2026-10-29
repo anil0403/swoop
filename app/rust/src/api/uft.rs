@@ -7,7 +7,7 @@ use std::net::{Ipv4Addr, SocketAddr, TcpListener, UdpSocket};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicI64, Ordering};
 use std::sync::mpsc::{channel, Sender};
-use std::sync::{Arc, Mutex, OnceLock};
+use std::sync::{Arc, LazyLock, Mutex, OnceLock};
 use std::thread;
 use std::time::{Duration, Instant};
 use uft::discover::{self, Device, Found};
@@ -324,6 +324,14 @@ pub fn receive(dir: String, sink: StreamSink<Incoming>) {
 /// Where incoming events go. A reopened app takes over the running receiver: on Android the process
 /// outlives the window when a transfer keeps it alive, and the port is still bound.
 static RECV_SINK: Mutex<Option<StreamSink<Incoming>>> = Mutex::new(None);
+/// The running receiver's save folder (`set_save_dir`).
+static RECV_DIR: LazyLock<Arc<Mutex<PathBuf>>> = LazyLock::new(Default::default);
+
+/// Where received files go from the next offer on; a transfer already running keeps its folder.
+#[flutter_rust_bridge::frb(sync)]
+pub fn set_save_dir(dir: String) {
+    *RECV_DIR.lock().unwrap() = dir.into();
+}
 
 fn to_app(ev: Incoming) {
     if let Some(s) = RECV_SINK.lock().unwrap().as_ref() {
@@ -333,6 +341,7 @@ fn to_app(ev: Incoming) {
 
 fn start_receive(dir: String, sink: StreamSink<Incoming>) -> Result<(), String> {
     let st = state()?;
+    set_save_dir(dir);
     if let Some(old) = RECV_SINK.lock().unwrap().as_mut() {
         *old = sink;
         return Ok(());
@@ -362,7 +371,7 @@ fn start_receive(dir: String, sink: StreamSink<Incoming>) -> Result<(), String> 
         sink.is_some_and(|s| ask(o, &s))
     });
     let opts = RecvOptions {
-        dir: dir.into(),
+        dir: RECV_DIR.clone(),
         null_sink: false,
         name: st.name.clone(),
         accept: Some(accept),

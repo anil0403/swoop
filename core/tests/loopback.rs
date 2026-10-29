@@ -3,7 +3,7 @@
 use std::fs;
 use std::net::{SocketAddr, TcpListener};
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use uft::recv::{self, RecvOptions};
 use uft::send::{self, SendOptions, Source, Streams};
 use uft::tls::Identity;
@@ -32,7 +32,7 @@ fn receiver(dir: &Path, null_sink: bool) -> (SocketAddr, String) {
     let id = Arc::new(Identity::generate().unwrap());
     let fp = id.fingerprint();
     let opts = RecvOptions {
-        dir: dir.to_path_buf(),
+        dir: Arc::new(Mutex::new(dir.to_path_buf())),
         null_sink,
         name: "rx".into(),
         accept: None,

@@ -185,6 +185,10 @@ class Home extends StatefulWidget {
 class HomeState extends State<Home> {
   uft.Me? me;
   String? dir, error;
+
+  /// Downloads/Swoop; `dir` differs when the user picked another save folder, kept in [savedDir].
+  String? defaultDir;
+  late File savedDir;
   List<uft.Peer> peers = [];
 
   /// Added by address or link; kept across rescans.
@@ -243,12 +247,17 @@ class HomeState extends State<Home> {
         (d, name) = ('${downloads.path}/Swoop', Platform.localHostname);
       }
       final m = await uft.init(configDir: config.path, name: name);
+      savedDir = File('${config.path}/save_dir');
+      final saved = savedDir.existsSync() ? savedDir.readAsStringSync().trim() : '';
+      // A picked folder that's gone or read-only (an unplugged drive) falls back to the default.
+      final use = saved.isNotEmpty && await writable(saved) ? saved : d;
       setState(() {
         me = m;
-        dir = d;
+        defaultDir = d;
+        dir = use;
       });
       uft
-          .receive(dir: d)
+          .receive(dir: use)
           .listen(
             onIncoming,
             onError: (Object e) => setState(() {
@@ -765,8 +774,9 @@ class HomeState extends State<Home> {
   }
 
   /// "~/Downloads/Swoop" or "Download/Swoop" rather than the full path.
-  String get shortDir {
-    final d = dir!;
+  String get shortDir => short(dir!);
+
+  String short(String d) {
     if (Platform.isAndroid) return d.replaceFirst('/storage/emulated/0/', '');
     final home = Platform.environment['HOME'];
     return home != null && d.startsWith('$home/') ? '~${d.substring(home.length)}' : d;
@@ -1022,7 +1032,11 @@ class HomeState extends State<Home> {
                 ],
               ),
             ),
-            const SizedBox(width: 8),
+            IconButton(
+              tooltip: 'Save folder',
+              icon: const Icon(Icons.folder_open),
+              onPressed: dir == null ? null : saveFolder,
+            ),
             Tooltip(
               message: 'Receive files',
               child: Switch(
@@ -1039,6 +1053,91 @@ class HomeState extends State<Home> {
         ),
       ),
     );
+  }
+
+  /// Where received files go: pick another folder, or go back to the default.
+  Future<void> saveFolder() async {
+    final theme = Theme.of(context);
+    final choice = await showModalBottomSheet<bool>(
+      context: context,
+      showDragHandle: true,
+      builder: (context) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(24, 0, 24, 4),
+              child: Text('Save received files to', style: theme.textTheme.titleMedium),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(24, 0, 24, 8),
+              child: Text(
+                shortDir,
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+              ),
+            ),
+            ListTile(
+              contentPadding: const EdgeInsets.symmetric(horizontal: 24),
+              leading: const Icon(Icons.drive_folder_upload),
+              title: const Text('Choose another folder'),
+              onTap: () => Navigator.pop(context, true),
+            ),
+            if (dir != defaultDir)
+              ListTile(
+                contentPadding: const EdgeInsets.symmetric(horizontal: 24),
+                leading: const Icon(Icons.restart_alt),
+                title: const Text('Use the default'),
+                subtitle: Text(short(defaultDir!)),
+                onTap: () => Navigator.pop(context, false),
+              ),
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    );
+    if (choice == null) return;
+    if (!choice) return useDir(defaultDir!);
+    final picked = Platform.isAndroid
+        ? await android.invokeMethod<String>('pickDir')
+        : await getDirectoryPath();
+    if (picked == null) return;
+    if (picked.isEmpty || !await writable(picked)) {
+      setState(
+        () => error = Platform.isAndroid
+            ? "Swoop can't save there. Pick a folder on this phone's storage, such as one in Download or Documents."
+            : "Swoop can't save to that folder: it isn't writable.",
+      );
+      return;
+    }
+    useDir(picked);
+  }
+
+  void useDir(String d) {
+    uft.setSaveDir(dir: d);
+    setState(() => dir = d);
+    try {
+      d == defaultDir
+          ? (savedDir.existsSync() ? savedDir.deleteSync() : null)
+          : savedDir.writeAsStringSync(d);
+    } catch (_) {
+      // Not kept for next time; still used now.
+    }
+  }
+
+  /// Whether files can be created in `d` (made if missing).
+  Future<bool> writable(String d) async {
+    try {
+      await Directory(d).create(recursive: true);
+      final probe = File('$d/.swoop-write-test');
+      await probe.writeAsString('');
+      await probe.delete();
+      return true;
+    } catch (_) {
+      return false;
+    }
   }
 
   /// Shown behind a transfer card while it's swiped away; same shape and margin as the card.

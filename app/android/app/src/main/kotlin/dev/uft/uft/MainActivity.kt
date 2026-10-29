@@ -28,6 +28,8 @@ import java.io.File
 /** The platform side of the app: what the Rust core can't do from inside an Android process. */
 class MainActivity : FlutterActivity() {
     private val pick = 1
+    private val pickDir = 2
+    private var pickingDir: MethodChannel.Result? = null
     private var picking: Pair<MethodChannel.Result, Boolean>? = null
     private var multicast: WifiManager.MulticastLock? = null
     private var network: ConnectivityManager.NetworkCallback? = null
@@ -110,6 +112,12 @@ class MainActivity : FlutterActivity() {
                     ),
                 )
                 "pick" -> pick(call.arguments as Boolean, result)
+                "pickDir" -> {
+                    pickingDir?.success(null)
+                    pickingDir = result
+                    @Suppress("DEPRECATION")
+                    startActivityForResult(Intent(Intent.ACTION_OPEN_DOCUMENT_TREE), pickDir)
+                }
                 "release" -> {
                     synchronized(fds) { (call.arguments as List<*>).forEach { fds.remove(it)?.close() } }
                     result.success(null)
@@ -261,6 +269,12 @@ class MainActivity : FlutterActivity() {
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         @Suppress("DEPRECATION")
         super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode == pickDir) {
+            // null: cancelled; "": a folder with no file path.
+            pickingDir?.success(data?.data?.takeIf { resultCode == RESULT_OK }?.let { treePath(it) ?: "" })
+            pickingDir = null
+            return
+        }
         if (requestCode != pick) return
         val (result, folder) = picking ?: return
         picking = null
@@ -310,6 +324,19 @@ class MainActivity : FlutterActivity() {
         val path = "/proc/self/fd/${pfd.fd}"
         synchronized(fds) { fds[path] = pfd }
         return listOf(path, name)
+    }
+
+    /**
+     * A picked folder as a file path the Rust core can write to, or null when it has none (a provider
+     * other than the phone's storage). "primary:Download/X" → /storage/emulated/0/Download/X,
+     * "1234-ABCD:X" (SD card) → /storage/1234-ABCD/X.
+     */
+    private fun treePath(uri: Uri): String? {
+        if (uri.authority != "com.android.externalstorage.documents") return null
+        val id = DocumentsContract.getTreeDocumentId(uri)
+        val volume = id.substringBefore(':')
+        val base = if (volume == "primary") Environment.getExternalStorageDirectory().path else "/storage/$volume"
+        return File(base, id.substringAfter(':', "")).path
     }
 
     /** Every file under a picked folder, named `folder/sub/file`, and each empty folder as ["", name]. */
