@@ -1,0 +1,32 @@
+# Flatpak bundle of the Linux release build; release.yml puts uft-linux-x86_64.tar.gz and icon.png next to this file.
+# ponytail: no direct link in the sandbox (direct.rs runs nmcli, iw and dnsmasq); NetworkManager over D-Bus would
+# bring it back. Same-network transfers, Bluetooth discovery and the save folder work.
+id: dev.uft.uft
+runtime: org.freedesktop.Platform
+runtime-version: '24.08'
+sdk: org.freedesktop.Sdk
+command: uft-app
+finish-args:
+  - --share=network
+  - --share=ipc
+  - --socket=wayland
+  - --socket=fallback-x11
+  - --device=dri
+  - --filesystem=xdg-download
+  - --system-talk-name=org.bluez
+modules:
+  - name: uft
+    buildsystem: simple
+    build-commands:
+      - mkdir -p /app/lib /app/bin
+      - cp -r lib/uft /app/lib/uft
+      - ln -s ../lib/uft/uft-app /app/bin/uft-app
+      - sed 's/^Icon=.*/Icon=dev.uft.uft/' share/applications/uft.desktop > dev.uft.uft.desktop
+      - install -Dm644 dev.uft.uft.desktop -t /app/share/applications
+      - install -Dm644 icon.png /app/share/icons/hicolor/192x192/apps/dev.uft.uft.png
+    sources:
+      - type: archive
+        path: uft-linux-x86_64.tar.gz
+        strip-components: 0
+      - type: file
+        path: icon.png

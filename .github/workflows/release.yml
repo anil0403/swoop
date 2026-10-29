@@ -68,10 +68,23 @@ jobs:
           cp linux/uft.desktop ../pkg/share/applications/
       - name: package
         run: cd pkg && tar -czf ../dist/${{ matrix.name }}.tar.gz *
+      - name: appimage
+        if: ${{ !contains(matrix.target, 'android') }}
+        run: |
+          arch=${{ startsWith(matrix.target, 'x86_64') && 'x86_64' || 'aarch64' }}
+          mkdir -p AppDir/usr && cp -r pkg/* AppDir/usr/
+          ln -s usr/bin/uft-app AppDir/AppRun
+          sed 's/^Icon=.*/Icon=uft/' pkg/share/applications/uft.desktop > AppDir/uft.desktop
+          cp app/android/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png AppDir/uft.png
+          curl -fsSLo "$RUNNER_TEMP/appimagetool" \
+            "https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-$arch.AppImage"
+          chmod +x "$RUNNER_TEMP/appimagetool"
+          # No FUSE on the runners.
+          ARCH=$arch APPIMAGE_EXTRACT_AND_RUN=1 "$RUNNER_TEMP/appimagetool" AppDir dist/uft-$arch.AppImage
       - uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.name }}
-          path: dist/${{ matrix.name }}.tar.gz
+          path: dist/*
 
   apk:
     runs-on: ubuntu-latest
@@ -119,11 +132,35 @@ jobs:
           path: dist/uft-android.apk
           if-no-files-found: ignore
 
+  # ponytail: x86_64 only; an aarch64 bundle needs an arm runner in this container.
+  flatpak:
+    needs: build
+    runs-on: ubuntu-latest
+    container:
+      image: ghcr.io/flathub-infra/flatpak-github-actions:freedesktop-24.08
+      options: --privileged
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TAG }}
+      - uses: actions/download-artifact@v4
+        with:
+          name: uft-linux-x86_64
+          path: packaging/flatpak
+      - run: cp app/android/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png packaging/flatpak/icon.png
+      - uses: flathub-infra/flatpak-github-actions/flatpak-builder@master
+        with:
+          manifest-path: packaging/flatpak/dev.uft.uft.yml
+          bundle: uft-x86_64.flatpak
+          cache: false
+
   publish:
-    needs: [build, apk]
+    needs: [build, apk, flatpak]
     if: github.event_name == 'push' || inputs.tag != ''
     runs-on: ubuntu-latest
     environment: release
+    env:
+      AUR_KEY: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
     steps:
       - uses: actions/download-artifact@v4
         with:
@@ -143,3 +180,23 @@ jobs:
           gh release upload "$TAG" * --clobber
           # A beta stays a pre-release, so .../releases/latest/download/... always points at a release.
           gh release edit "$TAG" --draft=false ${pre:---latest}
+      # Releases only (VERSIONING.md); the owner adds the AUR key.
+      - if: ${{ !contains(env.TAG, '-') && env.AUR_KEY == '' }}
+        run: echo "::warning::no AUR_SSH_PRIVATE_KEY secret; uft-bin not updated on the AUR (see VERSIONING.md)"
+      - if: ${{ !contains(env.TAG, '-') && env.AUR_KEY != '' }}
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TAG }}
+          path: src
+      - if: ${{ !contains(env.TAG, '-') && env.AUR_KEY != '' }}
+        run: sed -i "s/^pkgver=.*/pkgver=${TAG#v}/" src/packaging/aur/PKGBUILD
+      - if: ${{ !contains(env.TAG, '-') && env.AUR_KEY != '' }}
+        uses: KSXGitHub/github-actions-deploy-aur@v4.2.0
+        with:
+          pkgname: uft-bin
+          pkgbuild: src/packaging/aur/PKGBUILD
+          updpkgsums: true
+          commit_username: ${{ github.repository_owner }}
+          commit_email: ${{ github.repository_owner }}@users.noreply.github.com
+          ssh_private_key: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
+          commit_message: ${{ env.TAG }}

@@ -1,0 +1,30 @@
+# AUR package of the Linux release build. release.yml sets pkgver and the checksums and pushes it to the AUR on each
+# release (VERSIONING.md); don't edit those here.
+pkgname=uft-bin
+pkgver=0
+pkgrel=1
+pkgdesc='Offline file transfer between Linux and Android at the full speed of the local link'
+arch=(x86_64 aarch64)
+url=https://github.com/anil0403/ultra-fast-data-transfer
+license=(unknown)
+depends=(gtk3 dbus)
+optdepends=(
+  'bluez: find devices with no shared network'
+  'networkmanager: direct Wi-Fi link to those devices'
+  'dnsmasq: host the direct link'
+  'iw: link diagnostics and the hotspot channel'
+)
+provides=(uft)
+conflicts=(uft)
+source_x86_64=("$pkgname-$pkgver-x86_64.tar.gz::$url/releases/download/v$pkgver/uft-linux-x86_64.tar.gz")
+source_aarch64=("$pkgname-$pkgver-aarch64.tar.gz::$url/releases/download/v$pkgver/uft-linux-aarch64.tar.gz")
+sha256sums_x86_64=(SKIP)
+sha256sums_aarch64=(SKIP)
+
+package() {
+  install -Dm755 bin/uft -t "$pkgdir/usr/bin"
+  install -d "$pkgdir/usr/lib"
+  cp -r lib/uft "$pkgdir/usr/lib/uft"
+  ln -s /usr/lib/uft/uft-app "$pkgdir/usr/bin/uft-app"
+  install -Dm644 share/applications/uft.desktop -t "$pkgdir/usr/share/applications"
+}
