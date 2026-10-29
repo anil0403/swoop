@@ -40,7 +40,12 @@ class Transfer {
   String? note;
   String? result;
   bool failed = false;
+
+  /// A running send's id, for `uft.cancel`.
+  int? sendId;
 }
+
+var _nextSend = 1;
 
 /// Android side (MainActivity.kt): device name, save folder, file picking, power locks.
 const android = MethodChannel('uft');
@@ -158,6 +163,18 @@ class HomeState extends State<Home> {
             });
             // Bluetooth turned on or permission granted since: try again.
             if (bleError != null) startBle();
+            if (Platform.isAndroid) {
+              android
+                  .invokeMapMethod<String, Object?>('link')
+                  .then(
+                    (l) => uft.setLink(
+                      kind: l?['kind'] as String?,
+                      mhz: l?['mhz'] as int?,
+                      mbps: l?['mbps'] as int?,
+                      dbm: l?['dbm'] as int?,
+                    ),
+                  );
+            }
             rescan = Timer(const Duration(seconds: 4), scan);
           },
         );
@@ -326,22 +343,26 @@ class HomeState extends State<Home> {
   /// Sends into `card` if given (a direct link set up first), then calls `after`.
   void send(uft.Peer p, List<uft.Pick> picks, {Transfer? card, void Function()? after}) {
     final t = card ?? Transfer('To ${p.name} · ${describe(picks)}');
-    t.note = null;
+    t
+      ..note = null
+      ..sendId = _nextSend++;
     if (card == null) setState(() => transfers.insert(0, t));
     updateBusy();
     void end() {
+      setState(() => t.sendId = null);
       updateBusy();
       release(picks);
       after?.call();
     }
 
     uft
-        .sendFiles(peer: p, picks: picks)
+        .sendFiles(id: t.sendId!, peer: p, picks: picks)
         .listen(
           (e) => setState(() {
             switch (e) {
               case uft.Outgoing_Progress():
                 t
+                  ..note = null
                   ..done = e.done
                   ..total = e.total
                   ..speed = e.speed
@@ -353,11 +374,17 @@ class HomeState extends State<Home> {
                   ..result =
                       'Sent ${size(e.bytes)} in ${duration(e.secs)} · '
                       'avg ${speed(e.avg)} · peak ${speed(e.peak)}'
-                      '${e.resumed > 0 ? ' · ${size(e.resumed)} already there' : ''}';
+                      '${e.resumed > 0 ? ' · ${size(e.resumed)} already there' : ''}'
+                      '${[?uft.diagnose(fingerprint: p.fingerprint, speed: e.avg)].map((d) => '\n$d').join()}';
+              case uft.Outgoing_Reconnecting():
+                t.note = 'Connection lost (${e.error}); looking for ${p.name} again…';
               case uft.Outgoing_Failed():
                 t
                   ..failed = true
-                  ..result = e.error;
+                  ..note = null
+                  ..result = e.error == 'cancelled'
+                      ? 'Cancelled · send the same files again to continue where it stopped'
+                      : e.error;
             }
           }),
           onDone: end,
@@ -548,7 +575,11 @@ class HomeState extends State<Home> {
               child: ListTile(
                 leading: Icon(p.os == 'android' ? Icons.phone_android : Icons.computer),
                 title: Text(p.name),
-                subtitle: Text('${p.addr} · code ${p.code}'),
+                subtitle: Text(
+                  '${p.addr} · code ${p.code}'
+                  '${p.link == null ? '' : '\n${p.link}'}'
+                  '${p.expected == null ? '' : ' · up to ${speed(p.expected!)}'}',
+                ),
                 trailing: const Icon(Icons.send),
                 onTap: () => pick(p),
               ),
@@ -614,6 +645,14 @@ class TransferCard extends StatelessWidget {
                         '${t.eta == null ? '' : '  ETA ${duration(t.eta!)}'}'
                   : t.result!,
             ),
+            if (running && t.sendId != null)
+              Align(
+                alignment: Alignment.centerRight,
+                child: TextButton(
+                  onPressed: () => uft.cancel(id: t.sendId!),
+                  child: const Text('Cancel'),
+                ),
+              ),
           ],
         ),
       ),
