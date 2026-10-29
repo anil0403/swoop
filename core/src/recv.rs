@@ -543,6 +543,17 @@ fn plan(ctx: &Ctx, peer_fp: String, chunk_size: u64, files: &[FileEntry]) -> Res
         st.left.push(left);
         have.push(h);
     }
+    if !ctx.null_sink {
+        // Parts that exist were preallocated when they started.
+        let need = targets
+            .iter()
+            .zip(&st.left)
+            .filter(|(t, left)| **left > 0 && !t.part.exists())
+            .map(|(t, _)| t.size)
+            .fold(0u64, u64::saturating_add);
+        let big = targets.iter().find(|t| t.size >= 4 << 30);
+        fits(&ctx.dir, need, big.map(|t| (&t.dest, t.size)))?;
+    }
     let sess = Session {
         peer_fp,
         dir: ctx.dir.clone(),
@@ -553,6 +564,40 @@ fn plan(ctx: &Ctx, peer_fp: String, chunk_size: u64, files: &[FileEntry]) -> Res
         written: AtomicU64::new(0),
     };
     Ok((sess, have, now))
+}
+
+/// Room for `need` more bytes in `dir`, and no file of 4 GiB or more on FAT32.
+// ponytail: Android shared storage is FUSE, so an SD card's FAT32 isn't seen there; the
+// write then fails at 4 GiB with an error instead of this message.
+// f_type's integer type differs between targets.
+#[allow(clippy::unnecessary_cast)]
+fn fits(dir: &Path, need: u64, big: Option<(&PathBuf, u64)>) -> Result<(), String> {
+    // The folder may not exist yet; its nearest existing parent is on the same disk.
+    let Some(d) = dir.ancestors().find(|d| d.exists()) else {
+        return Ok(());
+    };
+    let Ok(fs) = rustix::fs::statvfs(d) else {
+        return Ok(());
+    };
+    let free = fs.f_bavail.saturating_mul(fs.f_frsize);
+    if need > free {
+        return Err(format!(
+            "not enough space: needs {} MB, {} MB free",
+            need.div_ceil(1_000_000),
+            free / 1_000_000
+        ));
+    }
+    const MSDOS_SUPER_MAGIC: i64 = 0x4d44;
+    if let Some((dest, size)) = big
+        && rustix::fs::statfs(d).is_ok_and(|s| s.f_type as i64 == MSDOS_SUPER_MAGIC)
+    {
+        return Err(format!(
+            "the save folder is on FAT32, which can't hold files of 4 GB or more ({} is {} MB)",
+            dest.file_name().unwrap_or_default().to_string_lossy(),
+            size / 1_000_000
+        ));
+    }
+    Ok(())
 }
 
 fn control<S: Read + Write>(
@@ -572,6 +617,11 @@ fn control<S: Read + Write>(
         return Err(bad("expected offer"));
     };
     let total = files.iter().map(|f| f.size).fold(0u64, u64::saturating_add);
+    // Planned first: an offer that can't fit is refused without asking the user.
+    let (sess, have, now) = match plan(ctx, peer_fp.clone(), chunk_size, &files) {
+        Ok(p) => p,
+        Err(reason) => return send(&mut s, &Msg::Reject { reason }),
+    };
     if let Some(accept) = &ctx.accept {
         let offer = Offer {
             peer_fp: peer_fp.clone(),
@@ -584,10 +634,6 @@ fn control<S: Read + Write>(
             return send(&mut s, &Msg::Reject { reason });
         }
     }
-    let (sess, have, now) = match plan(ctx, peer_fp.clone(), chunk_size, &files) {
-        Ok(p) => p,
-        Err(reason) => return send(&mut s, &Msg::Reject { reason }),
-    };
     let sess = Arc::new(sess);
     let resumed: u64 = have
         .iter()
@@ -938,6 +984,14 @@ mod tests {
         assert!(matches!(events(&rx).last(), Some(RecvEvent::Failed { .. })));
         assert!(!dir.join("a.bin").exists());
         let _ = fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn refuses_what_wont_fit() {
+        let dir = tmp("fits").join("not/yet/made");
+        assert!(fits(&dir, 0, None).is_ok());
+        let e = fits(&dir, u64::MAX, None).unwrap_err();
+        assert!(e.starts_with("not enough space"), "{e}");
     }
 
     #[test]
