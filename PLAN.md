@@ -189,7 +189,9 @@ BLE contract (both platforms):
 - [x] 8.5 Transfer progress in the Android notification; received photos and videos scanned into the Gallery (by ctime,
   since files keep the sender's mtime).
 - [x] 8.6 A running transfer survives swiping the app away (the service and locks stay); the Flutter engine does not, so new
-  offers need the app reopened, and a direct-link transfer still ends.
+  offers need the app reopened, and a direct-link transfer still ends. Reopened, the app takes over the running receiver
+  and shows the transfer. Emulator (API 37): a 7.5 GB receive kept going after the task was removed and finished in the
+  reopened app.
 - [x] 8.7 UI: the icon's blue, light and dark; two columns on wide windows; status card, empty state, smooth progress,
   Clear finished, drop overlay; start-up errors (a second copy holding the port) shown instead of thrown.
 - [ ] 8.8 On real phones: the share sheet, the camera link, the notification bar, the Gallery on Android 8–10, swipe-away.
