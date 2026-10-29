@@ -5,13 +5,13 @@
 <h1 align="center">Swoop</h1>
 
 <p align="center">
-  <b>Send files between Linux and Android at the full speed of your local network.</b><br>
+  <b>Send files between Linux, Windows and Android at the full speed of your local network.</b><br>
   Offline. Zero setup. No accounts, no cloud, no cables.
 </p>
 
 <p align="center">
   <a href="https://github.com/anil0403/swoop/releases/latest"><img alt="Latest release" src="https://img.shields.io/github/v/release/anil0403/swoop?color=1D5FD1&label=release"></a>
-  <img alt="Platforms" src="https://img.shields.io/badge/platforms-Linux%20%7C%20Android-1D5FD1">
+  <img alt="Platforms" src="https://img.shields.io/badge/platforms-Linux%20%7C%20Windows%20%7C%20Android-1D5FD1">
   <a href="LICENSE"><img alt="MIT license" src="https://img.shields.io/badge/license-MIT-1D5FD1"></a>
 </p>
 
@@ -51,7 +51,7 @@ carry.
 | **Private and secure** | TLS 1.3 with per-device keys. The first time a new device sends, both screens show the same 6-digit code to confirm. |
 | **Resumes** | A dropped or cancelled transfer continues from where it stopped, with every chunk checked (BLAKE3). |
 | **Any size, any number** | Single huge files or folders of thousands of small ones. Swoop checks free space before it starts. |
-| **Fits in** | Android share sheet, drag and drop on Linux, a QR code for the phone camera, progress in the notification bar, photos straight into the Gallery. |
+| **Fits in** | Android share sheet, drag and drop on Linux and Windows, a QR code for the phone camera, progress in the notification bar, photos straight into the Gallery. |
 | **Light and dark** | A clean interface that follows your system theme, on phones and on wide desktop windows. |
 
 ## Supported systems
@@ -59,6 +59,7 @@ carry.
 | Platform | Requirements | Builds |
 |---|---|---|
 | **Linux** | x86_64 or aarch64 (64-bit ARM), glibc 2.35+ (Ubuntu 22.04+, Debian 12+, Fedora 36+, Arch), GTK 3 | App + `swoop` command |
+| **Windows** | Windows 10 or 11, x86_64 | App + `swoop` command |
 | **Android** | Android 8.0 or newer | App for 64-bit phones, and one for older 32-bit phones |
 | **Termux** | 64-bit ARM phone | `swoop` command |
 
@@ -81,6 +82,9 @@ downloads.
 | Archive: app + `swoop` command | [swoop-linux-x86_64.tar.gz](https://github.com/anil0403/swoop/releases/latest/download/swoop-linux-x86_64.tar.gz) | [swoop-linux-aarch64.tar.gz](https://github.com/anil0403/swoop/releases/latest/download/swoop-linux-aarch64.tar.gz) |
 | AppImage | [swoop-x86_64.AppImage](https://github.com/anil0403/swoop/releases/latest/download/swoop-x86_64.AppImage) | [swoop-aarch64.AppImage](https://github.com/anil0403/swoop/releases/latest/download/swoop-aarch64.AppImage) |
 | Flatpak | [swoop-x86_64.flatpak](https://github.com/anil0403/swoop/releases/latest/download/swoop-x86_64.flatpak) | |
+
+**Windows:** [swoop-windows-x86_64.zip](https://github.com/anil0403/swoop/releases/latest/download/swoop-windows-x86_64.zip)
+(app + `swoop` command, x86_64)
 
 **Termux:** [swoop-android-aarch64.tar.gz](https://github.com/anil0403/swoop/releases/latest/download/swoop-android-aarch64.tar.gz)
 
@@ -112,6 +116,20 @@ flatpak install --user swoop-x86_64.flatpak
 > The Flatpak can't create a direct Wi-Fi link from inside its sandbox. Use another format if your devices often
 > share no network.
 
+### Windows
+
+1. Download [swoop-windows-x86_64.zip](https://github.com/anil0403/swoop/releases/latest/download/swoop-windows-x86_64.zip)
+   and unzip it (right-click → **Extract All**).
+2. Run `swoop-app.exe` from the unzipped folder. The `swoop` command (`swoop.exe`) is in the same folder; add the
+   folder to your `PATH` to use it from any terminal.
+3. On first start Windows asks whether to allow Swoop through the firewall. Allow it on **private networks**, or
+   other devices can't find this one.
+
+> The build isn't signed yet, so SmartScreen may warn about it: click **More info → Run anyway**.
+
+> The direct Wi-Fi link and finding devices over Bluetooth aren't on Windows yet, so the devices need a shared
+> network (Wi-Fi, Ethernet or a hotspot).
+
 ### Android
 
 1. On the phone, open [swoop-android.apk](https://github.com/anil0403/swoop/releases/latest/download/swoop-android.apk)
@@ -139,23 +157,23 @@ Check any install with `swoop version`.
 ## Getting started
 
 1. **Open Swoop on both devices.** On the same network they show up in each other's list within a few seconds.
-2. **Send.** Tap the other device and pick files or a folder. On Linux you can also drop files onto the window;
-   on Android, use **Share → Swoop** from any app. The first time you send to a device, Swoop shows its pairing
-   code and sends nothing until you tap **Send**. After that the device is known and marked with a check. If
+2. **Send.** Tap the other device and pick files or a folder. On Linux and Windows you can also drop files onto
+   the window; on Android, use **Share → Swoop** from any app. The first time you send to a device, Swoop shows its
+   pairing code and sends nothing until you tap **Send**. After that the device is known and marked with a check. If
    another device shows up with the same name, it's flagged as *not the one you sent to before*. Tap the check
    (or long-press the device) to forget it.
 3. **Accept.** The first time, both screens show the same 6-digit code. Check it matches and tap **Accept**, or
    **Always accept** to trust that device from now on. The code is new every time, so a code that doesn't match
    means someone else is answering: tap **Decline**. A device on Swoop 2.6.1 or older can't pair anymore,
    only send to devices that already trust it, so update both.
-4. **Done.** Files land in `Downloads/Swoop` (Linux) or `Download/Swoop` (Android). Photos and videos appear in
-   the Gallery.
+4. **Done.** Files land in `Downloads/Swoop` (Linux), `Downloads\Swoop` (Windows) or `Download/Swoop` (Android).
+   Photos and videos appear in the Gallery.
 
 **Devices don't see each other?** Guest Wi-Fi and some office networks block discovery. Tap the **link icon** at
 the top of the app, then scan the QR code with the phone camera or type the address the other device shows.
 
-**No shared network at all?** Turn on Bluetooth on both devices. Swoop finds the other device over Bluetooth and
-connects the two with a direct Wi-Fi link.
+**No shared network at all?** (Linux and Android) Turn on Bluetooth on both devices. Swoop finds the other device
+over Bluetooth and connects the two with a direct Wi-Fi link.
 
 **Not receiving?** Check the switch on the status card at the top. While it's off, Swoop turns down incoming
 files.
@@ -173,7 +191,8 @@ After each transfer the card shows the size, the average speed and the peak spee
 
 ## Command line
 
-The `swoop` command comes with the Linux install and works on its own: on servers, over SSH, or in Termux.
+The `swoop` command comes with the Linux and Windows installs and works on its own: on servers, over SSH, or in
+Termux.
 
 ```sh
 swoop recv --dir ~/Downloads        # receive: nearby devices can now find this one
@@ -223,6 +242,16 @@ cp /data/local/tmp/swoop ~ && chmod +x ~/swoop && ~/swoop version
 cd app
 flutter build linux --release   # -> build/linux/x64/release/bundle/swoop-app
 ./test-e2e.sh                   # full flow, app ↔ CLI in a network namespace (needs sudo and a display)
+```
+
+</details>
+
+<details>
+<summary><b>Windows app</b> (Flutter from <code>app/.flutter-version</code>, Visual Studio 2022 with "Desktop development with C++", Rust stable for MSVC)</summary>
+
+```sh
+cd app
+flutter build windows --release   # -> build\windows\x64\runner\Release\swoop-app.exe
 ```
 
 </details>
