@@ -144,6 +144,9 @@ class Transfer {
 
   /// A running send's id, for `uft.cancel`.
   int? sendId;
+
+  /// Where a received one was saved.
+  String? folder;
   final started = DateTime.now();
 }
 
@@ -369,11 +372,15 @@ class HomeState extends State<Home> {
           joinedSession = e.session;
           leaveTimer?.cancel();
         }
-        final t = Transfer(
-          'From ${e.peerName} · ${e.files} file${e.files == 1 ? '' : 's'}',
-          total: e.total,
-          sending: false,
-        )..done = e.resumed;
+        final t =
+            Transfer(
+                'From ${e.peerName} · ${e.files} file${e.files == 1 ? '' : 's'}',
+                total: e.total,
+                sending: false,
+              )
+              ..done = e.resumed
+              // The save folder an offer starts with is the one it keeps.
+              ..folder = dir;
         setState(() => transfers.insert(0, incoming[e.session] = t));
       case uft.Incoming_Progress():
         // One that started before the app was reopened (Android keeps it going when swiped away).
@@ -895,13 +902,16 @@ class HomeState extends State<Home> {
           key: ObjectKey(t),
           // Finished ones swipe away either way; a running one has to be cancelled first.
           child: t.result == null
-              ? TransferCard(t)
+              ? TransferCard(t, open: t.folder == null ? null : () => openFolder(t.folder!))
               : Dismissible(
                   key: ObjectKey(t),
                   background: swipeBg(theme, Alignment.centerLeft),
                   secondaryBackground: swipeBg(theme, Alignment.centerRight),
                   onDismissed: (_) => setState(() => transfers.remove(t)),
-                  child: TransferCard(t),
+                  child: TransferCard(
+                    t,
+                    open: t.folder == null ? null : () => openFolder(t.folder!),
+                  ),
                 ),
         ),
     ];
@@ -1087,6 +1097,15 @@ class HomeState extends State<Home> {
               title: const Text('Choose another folder'),
               onTap: () => Navigator.pop(context, true),
             ),
+            ListTile(
+              contentPadding: const EdgeInsets.symmetric(horizontal: 24),
+              leading: const Icon(Icons.folder_open),
+              title: const Text('Open folder'),
+              onTap: () {
+                Navigator.pop(context);
+                openFolder(dir!);
+              },
+            ),
             if (dir != defaultDir)
               ListTile(
                 contentPadding: const EdgeInsets.symmetric(horizontal: 24),
@@ -1115,6 +1134,19 @@ class HomeState extends State<Home> {
       return;
     }
     useDir(picked);
+  }
+
+  /// Shows `d` in the file manager.
+  Future<void> openFolder(String d) async {
+    try {
+      if (Platform.isAndroid) {
+        await android.invokeMethod('openDir', d);
+      } else if ((await Process.run('xdg-open', [d])).exitCode != 0) {
+        throw 'xdg-open failed';
+      }
+    } catch (_) {
+      setState(() => error = "Couldn't open ${short(d)}: no file manager handled it.");
+    }
   }
 
   void useDir(String d) {
@@ -1328,8 +1360,11 @@ class HomeState extends State<Home> {
 }
 
 class TransferCard extends StatelessWidget {
-  const TransferCard(this.t, {super.key});
+  const TransferCard(this.t, {this.open, super.key});
   final Transfer t;
+
+  /// Shows the folder a received transfer was saved in.
+  final VoidCallback? open;
 
   @override
   Widget build(BuildContext context) {
@@ -1386,6 +1421,8 @@ class TransferCard extends StatelessWidget {
                       onPressed: () => uft.cancel(id: t.sendId!),
                       child: const Text('Cancel'),
                     ),
+                  if (!running && !t.failed && open != null)
+                    TextButton(onPressed: open, child: const Text('Open folder')),
                 ],
               ),
             ),

@@ -1,6 +1,7 @@
 package dev.uft.uft
 
 import android.Manifest
+import android.app.DownloadManager
 import android.content.Intent
 import android.media.MediaScannerConnection
 import android.net.ConnectivityManager
@@ -112,6 +113,12 @@ class MainActivity : FlutterActivity() {
                     ),
                 )
                 "pick" -> pick(call.arguments as Boolean, result)
+                "openDir" -> try {
+                    openDir(call.arguments as String)
+                    result.success(null)
+                } catch (e: Exception) {
+                    result.error("openDir", e.message, null)
+                }
                 "pickDir" -> {
                     pickingDir?.success(null)
                     pickingDir = result
@@ -331,6 +338,23 @@ class MainActivity : FlutterActivity() {
      * other than the phone's storage). "primary:Download/X" → /storage/emulated/0/Download/X,
      * "1234-ABCD:X" (SD card) → /storage/1234-ABCD/X.
      */
+    /** Shows the folder at [path] in the Files app, or the Downloads app where Files can't open a folder. */
+    private fun openDir(path: String) {
+        // The reverse of treePath: /storage/emulated/0/X -> "primary:X", /storage/VOL/X -> "VOL:X".
+        val root = Environment.getExternalStorageDirectory().path
+        val id = if (path == root || path.startsWith("$root/")) {
+            "primary:" + path.removePrefix(root).trimStart('/')
+        } else {
+            path.removePrefix("/storage/").split('/', limit = 2).let { "${it[0]}:${it.getOrElse(1) { "" }}" }
+        }
+        val uri = DocumentsContract.buildDocumentUri("com.android.externalstorage.documents", id)
+        try {
+            startActivity(Intent(Intent.ACTION_VIEW).setDataAndType(uri, Document.MIME_TYPE_DIR))
+        } catch (e: Exception) {
+            startActivity(Intent(DownloadManager.ACTION_VIEW_DOWNLOADS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+        }
+    }
+
     private fun treePath(uri: Uri): String? {
         if (uri.authority != "com.android.externalstorage.documents") return null
         val id = DocumentsContract.getTreeDocumentId(uri)
