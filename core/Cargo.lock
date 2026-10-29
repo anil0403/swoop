@@ -632,7 +632,7 @@ dependencies = [
 
 [[package]]
 name = "uft"
-version = "2.8.0"
+version = "2.9.0"
 dependencies = [
  "blake3",
  "if-addrs",
