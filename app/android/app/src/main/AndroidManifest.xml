@@ -56,6 +56,13 @@
                 <category android:name="android.intent.category.DEFAULT"/>
                 <data android:mimeType="*/*"/>
             </intent-filter>
+            <!-- swoop://IP:PORT/FINGERPRINT, e.g. a QR code scanned with the camera app. -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW"/>
+                <category android:name="android.intent.category.DEFAULT"/>
+                <category android:name="android.intent.category.BROWSABLE"/>
+                <data android:scheme="swoop"/>
+            </intent-filter>
         </activity>
         <service
             android:name=".TransferService"

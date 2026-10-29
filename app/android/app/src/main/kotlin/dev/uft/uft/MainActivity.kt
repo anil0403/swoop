@@ -37,6 +37,8 @@ class MainActivity : FlutterActivity() {
     private var channel: MethodChannel? = null
     /** Files shared to Swoop that Dart hasn't fetched ("shared") yet. */
     private val shared = mutableListOf<Uri>()
+    /** The swoop:// link the app was opened with, until Dart fetches it ("openedLink"). */
+    private var openedLink: String? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -89,6 +91,10 @@ class MainActivity : FlutterActivity() {
                     shared.clear()
                     // One unreadable share shouldn't drop the rest.
                     background(result) { uris.mapNotNull { runCatching { open(it, name(it)) }.getOrNull() } }
+                }
+                "openedLink" -> {
+                    result.success(openedLink)
+                    openedLink = null
                 }
                 "info" -> result.success(
                     mapOf(
@@ -244,6 +250,7 @@ class MainActivity : FlutterActivity() {
         when (i.action) {
             Intent.ACTION_SEND -> i.getParcelableExtra<Uri>(Intent.EXTRA_STREAM)?.let { shared += it }
             Intent.ACTION_SEND_MULTIPLE -> i.getParcelableArrayListExtra<Uri>(Intent.EXTRA_STREAM)?.let { shared += it }
+            Intent.ACTION_VIEW -> if (i.data?.scheme == "swoop") openedLink = i.dataString
         }
     }
 
