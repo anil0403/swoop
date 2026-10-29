@@ -1047,10 +1047,10 @@ class HomeState extends State<Home> {
     padding: const EdgeInsets.symmetric(horizontal: 24),
     alignment: side,
     decoration: BoxDecoration(
-      color: theme.colorScheme.errorContainer,
+      color: theme.colorScheme.primary,
       borderRadius: BorderRadius.circular(16),
     ),
-    child: Icon(Icons.delete_outline, color: theme.colorScheme.onErrorContainer),
+    child: Icon(Icons.delete_outline, color: theme.colorScheme.onPrimary),
   );
 
   Widget header(ThemeData theme, String text, {Widget? trailing, Widget? action}) => Padding(
