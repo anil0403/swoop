@@ -256,7 +256,9 @@ mod ble {
         let addr: Address = id.parse().map_err(|_| format!("{id:?} is not a Bluetooth address"))?;
         let session = Session::new().await.map_err(|e| format!("Bluetooth is not available ({e})"))?;
         let dev = adapter(&session).await?.device(addr).map_err(bt)?;
-        let send = async { invite_char(&dev).await?.write(json.as_bytes()).await.map_err(bt) };
+        // With response (bluer's default is without), so a lost write is an error here.
+        let req = remote::CharacteristicWriteRequest { op_type: bluer::gatt::WriteOp::Request, ..Default::default() };
+        let send = async { invite_char(&dev).await?.write_ext(json.as_bytes(), &req).await.map_err(bt) };
         let res = tokio::time::timeout(Duration::from_secs(30), send)
             .await
             .unwrap_or_else(|_| Err("Bluetooth: the device didn't answer".into()));
@@ -443,6 +445,7 @@ mod tests {
     use super::*;
     use std::env::{set_var, var};
     use std::sync::mpsc::{channel, Receiver};
+    use std::sync::Arc;
     use std::time::Duration;
 
     fn link(path: String) -> String {
@@ -497,6 +500,27 @@ mod tests {
         }
         let (fp_a, fp_b) = ("0123456789abcdef".repeat(4), "fedcba9876543210".repeat(4));
         let long_name = "a device name too long to fit in a scan response";
+        // BlueZ's MIDI plugin reads the MIDI service PipeWire serves on each adapter, which needs pairing: confirm it
+        // here (virtual adapters only) instead of the desktop asking.
+        let ours = Arc::new([a.clone(), b.clone()]);
+        let ours2 = ours.clone();
+        let _agent = rt().block_on(async {
+            let s = bluer::Session::new().await.unwrap();
+            let agent = bluer::agent::Agent {
+                request_default: true,
+                request_confirmation: Some(Box::new(move |r| {
+                    let ok = ours.contains(&r.adapter);
+                    Box::pin(async move { ok.then_some(()).ok_or(bluer::agent::ReqError::Rejected) })
+                })),
+                request_authorization: Some(Box::new(move |r| {
+                    let ok = ours2.contains(&r.adapter);
+                    Box::pin(async move { ok.then_some(()).ok_or(bluer::agent::ReqError::Rejected) })
+                })),
+                ..Default::default()
+            };
+            let h = s.register_agent(agent).await.unwrap();
+            (s, h)
+        });
         let (ta, ra) = channel();
         let (tb, rb) = channel();
         rt().block_on(ble::start(fp_a.clone(), long_name.into(), move |e| ta.send(e).is_ok())).unwrap();
@@ -528,8 +552,12 @@ mod tests {
             let dev = ble::adapter(&s).await.unwrap().device(id.parse().unwrap()).unwrap();
             let c = ble::invite_char(&dev).await.unwrap();
             let (x, y) = json.as_bytes().split_at(100);
-            c.write(x).await.unwrap();
-            let at = bluer::gatt::remote::CharacteristicWriteRequest { offset: 100, ..Default::default() };
+            let mut at = bluer::gatt::remote::CharacteristicWriteRequest {
+                op_type: bluer::gatt::WriteOp::Request,
+                ..Default::default()
+            };
+            c.write_ext(x, &at).await.unwrap();
+            at.offset = 100;
             c.write_ext(y, &at).await.unwrap();
             dev.disconnect().await.unwrap();
         });
