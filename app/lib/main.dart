@@ -1319,6 +1319,11 @@ class HomeState extends State<Home> {
         await android.invokeMethod('openDir', d);
         return;
       }
+      if (Platform.isWindows) {
+        // Explorer exits with 1 even when it opened the folder, so its code says nothing.
+        await Process.start('explorer', [d.replaceAll('/', r'\')]);
+        return;
+      }
       final p = await Process.start('xdg-open', [d]);
       p.stdout.drain<void>();
       p.stderr.drain<void>();
