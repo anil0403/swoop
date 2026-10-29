@@ -25,6 +25,7 @@ const USAGE: &str = "usage:
   swoop send DEVICE PATH... [--streams auto|N]
   swoop send DEVICE --synthetic SIZE [--streams auto|N]
   swoop bench [--size SIZE] [--streams auto|N]
+  swoop known                              list devices sent to or trusted
   swoop forget DEVICE                      forget a device sent to or trusted: the next
                                            transfer checks its pairing code again
 DEVICE: a name or fingerprint prefix from `swoop scan`, a HOST[:PORT] (optionally
@@ -57,6 +58,7 @@ enum Cmd {
         size: u64,
         streams: Streams,
     },
+    Known,
     Forget {
         device: String,
     },
@@ -156,6 +158,7 @@ fn parse_args(args: &[String]) -> Result<Cmd, String> {
         "-h" | "--help" | "help" => Ok(Cmd::Help),
         "version" | "--version" | "-V" => no_pos(Cmd::Version),
         "id" => no_pos(Cmd::Id),
+        "known" => no_pos(Cmd::Known),
         "recv" => no_pos(Cmd::Recv {
             dir: PathBuf::from(get("--dir").unwrap_or(".")),
             port: get("--port")
@@ -485,6 +488,26 @@ fn run(cmd: Cmd) -> Res<()> {
         Cmd::Help => println!("{USAGE}"),
         Cmd::Version => println!("swoop {}", env!("CARGO_PKG_VERSION")),
         Cmd::Id => println!("{}", identity()?.fingerprint()),
+        Cmd::Known => {
+            let dir = config()?;
+            let (sent, trusted) = (Trust::load_file(dir.join("known"))?, Trust::load(&dir)?);
+            let mut all: Vec<(&str, &str)> = sent.entries().chain(trusted.entries()).collect();
+            // Stable sort: a device in both keeps the name it was sent to under.
+            all.sort_by_key(|e| e.0);
+            all.dedup_by_key(|e| e.0);
+            all.sort_by_key(|&(f, n)| (n.to_lowercase(), f));
+            if all.is_empty() {
+                eprintln!("no known devices yet");
+            }
+            for (f, n) in all {
+                let how = match (sent.contains(f), trusted.contains(f)) {
+                    (true, true) => "sent to, trusted",
+                    (true, false) => "sent to",
+                    _ => "trusted",
+                };
+                println!("{n}  {}  {how}", &f[..16]);
+            }
+        }
         Cmd::Forget { device } => {
             let dir = config()?;
             let want = device.trim().to_ascii_lowercase();
@@ -752,6 +775,7 @@ mod tests {
             })
         );
         assert!(parse_args(&args("forget")).is_err());
+        assert_eq!(parse_args(&args("known")), Ok(Cmd::Known));
         assert_eq!(parse_args(&args("--version")), Ok(Cmd::Version));
         assert_eq!(
             parse_args(&args("recv")),
