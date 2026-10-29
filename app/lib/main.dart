@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_rust_bridge/flutter_rust_bridge.dart' show AnyhowException;
 import 'package:path_provider/path_provider.dart';
 import 'package:uft/src/rust/api/uft.dart' as uft;
 import 'package:uft/src/rust/frb_generated.dart';
@@ -24,16 +25,112 @@ class App extends StatelessWidget {
   @override
   Widget build(BuildContext context) => MaterialApp(
     title: 'Swoop',
-    theme: ThemeData(colorSchemeSeed: Colors.teal),
-    darkTheme: ThemeData(colorSchemeSeed: Colors.teal, brightness: Brightness.dark),
+    theme: theme(Brightness.light),
+    darkTheme: theme(Brightness.dark),
     home: const Home(),
   );
 }
 
+/// The icon's blue, flat cards with rounded corners, the rounded progress bar.
+ThemeData theme(Brightness b) {
+  final t = ThemeData(colorSchemeSeed: const Color(0xFF1D5FD1), brightness: b);
+  final c = t.colorScheme;
+  return t.copyWith(
+    cardTheme: CardThemeData(
+      elevation: 0,
+      margin: const EdgeInsets.symmetric(vertical: 4),
+      color: c.surfaceContainerLow,
+      clipBehavior: Clip.antiAlias,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+    ),
+    progressIndicatorTheme: ProgressIndicatorThemeData(
+      linearMinHeight: 6,
+      borderRadius: BorderRadius.circular(3),
+      linearTrackColor: c.surfaceContainerHighest,
+    ),
+    appBarTheme: const AppBarTheme(centerTitle: false),
+  );
+}
+
+const tabular = [FontFeature.tabularFigures()];
+
+/// Fades and lifts a list item in the first time it's built; key it so it stays with its item.
+class Appear extends StatelessWidget {
+  const Appear({super.key, required this.child});
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) => TweenAnimationBuilder<double>(
+    tween: Tween(begin: 0, end: 1),
+    duration: const Duration(milliseconds: 350),
+    curve: Curves.easeOutCubic,
+    builder: (context, v, child) => Opacity(
+      opacity: v,
+      child: Transform.translate(offset: Offset(0, 12 * (1 - v)), child: child),
+    ),
+    child: child,
+  );
+}
+
+/// Rings spreading out from `child`: this device looking for others.
+class Pulse extends StatefulWidget {
+  const Pulse({super.key, required this.size, required this.child});
+  final double size;
+  final Widget child;
+
+  @override
+  State<Pulse> createState() => _PulseState();
+}
+
+class _PulseState extends State<Pulse> with SingleTickerProviderStateMixin {
+  late final c = AnimationController(vsync: this, duration: const Duration(milliseconds: 2400))
+    ..repeat();
+
+  @override
+  void dispose() {
+    c.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => SizedBox.square(
+    dimension: widget.size,
+    child: MediaQuery.disableAnimationsOf(context)
+        ? Center(child: widget.child)
+        : CustomPaint(
+            painter: _Rings(c, Theme.of(context).colorScheme.primary),
+            child: Center(child: widget.child),
+          ),
+  );
+}
+
+class _Rings extends CustomPainter {
+  _Rings(this.a, this.color) : super(repaint: a);
+  final Animation<double> a;
+  final Color color;
+
+  @override
+  void paint(Canvas canvas, Size s) {
+    final r = s.shortestSide / 2;
+    for (final offset in [0.0, 0.5]) {
+      final t = (a.value + offset) % 1;
+      canvas.drawCircle(
+        s.center(Offset.zero),
+        r * (0.35 + 0.65 * Curves.easeOut.transform(t)),
+        Paint()..color = color.withValues(alpha: 0.22 * (1 - t)),
+      );
+    }
+  }
+
+  @override
+  bool shouldRepaint(_Rings old) => old.color != color;
+}
+
 /// One transfer card, sending or receiving.
 class Transfer {
-  Transfer(this.title, {this.total = 0});
+  Transfer(this.title, {this.total = 0, this.sending = true});
   final String title;
+  final bool sending;
   int done = 0, total;
   double speed = 0, peak = 0;
   double? eta;
@@ -64,6 +161,9 @@ String size(num b) {
   return '${v.toStringAsFixed(i == 0 ? 0 : 1)} ${units[i]}';
 }
 
+/// An error's text, without the bridge's wrapper.
+String msg(Object e) => e is AnyhowException ? e.message : '$e';
+
 String speed(double bps) => '${(bps / 1e6).toStringAsFixed(1)} MB/s';
 
 String duration(double s) {
@@ -89,7 +189,10 @@ class HomeState extends State<Home> {
   final manual = <uft.Peer>[];
   final transfers = <Transfer>[];
   final incoming = <int, Transfer>{};
-  bool scanning = false, busy = false, receiving = true;
+  bool busy = false, receiving = true, dragging = false;
+
+  /// False once receiving failed to start, e.g. another copy of Swoop has the port.
+  bool listening = true;
 
   /// Shared to Swoop (Android) or dropped on the window (Linux): sent to the next device tapped.
   List<uft.Pick>? pending;
@@ -119,6 +222,8 @@ class HomeState extends State<Home> {
   @override
   void dispose() {
     rescan?.cancel();
+    notify?.cancel();
+    leaveTimer?.cancel();
     super.dispose();
   }
 
@@ -138,7 +243,15 @@ class HomeState extends State<Home> {
         me = m;
         dir = d;
       });
-      uft.receive(dir: d).listen(onIncoming, onError: (Object e) => setState(() => error = '$e'));
+      uft
+          .receive(dir: d)
+          .listen(
+            onIncoming,
+            onError: (Object e) => setState(() {
+              error = msg(e);
+              listening = false;
+            }),
+          );
       scan();
       startBle();
       if (Platform.isAndroid) {
@@ -148,14 +261,13 @@ class HomeState extends State<Home> {
         opened();
       }
     } catch (e) {
-      setState(() => error = '$e');
+      setState(() => error = msg(e));
     }
   }
 
   /// Scans for a few seconds, then again shortly after; devices that stop answering drop off.
   void scan() {
     if (!mounted) return;
-    setState(() => scanning = true);
     var latest = <uft.Peer>[];
     uft
         .scan(secs: 3)
@@ -167,13 +279,12 @@ class HomeState extends State<Home> {
               i < 0 ? peers.add(p) : peers[i] = p;
             }
           }),
-          onError: (Object e) => setState(() => error = '$e'),
+          onError: (Object e) => setState(() => error = msg(e)),
           onDone: () {
             if (!mounted) return;
             final stale = DateTime.now().subtract(const Duration(seconds: 15));
             setState(() {
               peers = latest;
-              scanning = false;
               ble.removeWhere((_, b) => b.seen.isBefore(stale));
             });
             // Bluetooth turned on or permission granted since: try again.
@@ -209,7 +320,7 @@ class HomeState extends State<Home> {
     try {
       await addPeer(link);
     } catch (e) {
-      setState(() => error = '$e');
+      setState(() => error = msg(e));
     }
   }
 
@@ -248,6 +359,7 @@ class HomeState extends State<Home> {
         final t = Transfer(
           'From ${e.peerName} · ${e.files} file${e.files == 1 ? '' : 's'}',
           total: e.total,
+          sending: false,
         )..done = e.resumed;
         setState(() => transfers.insert(0, incoming[e.session] = t));
       case uft.Incoming_Progress():
@@ -267,7 +379,7 @@ class HomeState extends State<Home> {
         if (t != null) {
           setState(() {
             t.done = t.total;
-            t.result = 'Received ${size(e.bytes)} in ${duration(e.secs)} · saved to $dir';
+            t.result = 'Received ${size(e.bytes)} in ${duration(e.secs)} · saved to $shortDir';
           });
           // Photos and videos show up in the Gallery.
           if (Platform.isAndroid) {
@@ -293,15 +405,35 @@ class HomeState extends State<Home> {
       context: context,
       barrierDismissible: false,
       builder: (context) => AlertDialog(
+        icon: const Icon(Icons.download_rounded),
         title: Text('${o.peerName} wants to send you ${o.files} file${o.files == 1 ? '' : 's'}'),
+        scrollable: true,
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Text(size(o.total)),
-            const SizedBox(height: 16),
-            const Text('Check that the other device shows the same code:'),
-            const SizedBox(height: 8),
-            Text(o.code, style: Theme.of(context).textTheme.headlineMedium),
+            Text(size(o.total), style: Theme.of(context).textTheme.titleMedium),
+            const SizedBox(height: 24),
+            const Text(
+              'Check that the other device shows the same code:',
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 12),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+              decoration: BoxDecoration(
+                color: Theme.of(context).colorScheme.primaryContainer,
+                borderRadius: BorderRadius.circular(16),
+              ),
+              child: Text(
+                o.code,
+                style: Theme.of(context).textTheme.headlineMedium?.copyWith(
+                  color: Theme.of(context).colorScheme.onPrimaryContainer,
+                  fontWeight: FontWeight.w600,
+                  letterSpacing: 4,
+                  fontFeatures: tabular,
+                ),
+              ),
+            ),
           ],
         ),
         actions: [
@@ -333,21 +465,29 @@ class HomeState extends State<Home> {
   Future<List<uft.Pick>> choose(String title) async {
     final folder = await showModalBottomSheet<bool>(
       context: context,
+      showDragHandle: true,
       builder: (context) => SafeArea(
         child: Column(
           mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            ListTile(title: Text(title)),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(24, 0, 24, 8),
+              child: Text(title, style: Theme.of(context).textTheme.titleMedium),
+            ),
             ListTile(
+              contentPadding: const EdgeInsets.symmetric(horizontal: 24),
               leading: const Icon(Icons.description),
               title: const Text('Files'),
               onTap: () => Navigator.pop(context, false),
             ),
             ListTile(
+              contentPadding: const EdgeInsets.symmetric(horizontal: 24),
               leading: const Icon(Icons.folder),
               title: const Text('Folder'),
               onTap: () => Navigator.pop(context, true),
             ),
+            const SizedBox(height: 8),
           ],
         ),
       ),
@@ -452,7 +592,7 @@ class HomeState extends State<Home> {
           onError: (Object e) => setState(
             () => t
               ..failed = true
-              ..result = '$e',
+              ..result = msg(e),
           ),
         );
   }
@@ -491,7 +631,7 @@ class HomeState extends State<Home> {
         () => t
           ..failed = true
           ..note = null
-          ..result = '$e',
+          ..result = msg(e),
       );
       updateBusy();
     }
@@ -505,6 +645,7 @@ class HomeState extends State<Home> {
       context: context,
       barrierDismissible: false,
       builder: (context) => AlertDialog(
+        icon: const Icon(Icons.wifi_tethering),
         title: Text('${inv.name} wants to send you files'),
         content: Text(
           "You're not on the same network, so this device joins ${inv.name}'s hotspot (${inv.wifi.ssid}) "
@@ -526,7 +667,7 @@ class HomeState extends State<Home> {
     } catch (e) {
       invited.remove(inv.fp);
       joinedFor = null;
-      setState(() => error = "Couldn't join ${inv.name}'s hotspot: $e");
+      setState(() => error = "Couldn't join ${inv.name}'s hotspot: ${msg(e)}");
     }
   }
 
@@ -545,21 +686,42 @@ class HomeState extends State<Home> {
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('Connect by address'),
+        scrollable: true,
         content: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             const Text('On the other device, type one of these:'),
-            for (final l in links) SelectableText(l, style: const TextStyle(fontSize: 12)),
+            const SizedBox(height: 8),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Theme.of(context).colorScheme.surfaceContainerHighest,
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: SelectableText(
+                links.isEmpty ? 'No network address yet' : links.join('\n'),
+                style: const TextStyle(fontFamily: 'monospace', fontSize: 13, height: 1.6),
+              ),
+            ),
             // A phone's camera opens Swoop from it.
             if (!Platform.isAndroid && links.isNotEmpty) ...[
-              const SizedBox(height: 8),
+              const SizedBox(height: 20),
               const Text('Or scan this with the phone camera:'),
+              const SizedBox(height: 12),
               Center(
-                child: QrImageView(data: links.first, size: 180, backgroundColor: Colors.white),
+                child: Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  child: QrImageView(data: links.first, size: 168, padding: EdgeInsets.zero),
+                ),
               ),
             ],
-            const SizedBox(height: 16),
+            const SizedBox(height: 24),
             TextField(
               controller: field,
               autofocus: true,
@@ -584,7 +746,7 @@ class HomeState extends State<Home> {
     try {
       await addPeer(target);
     } catch (e) {
-      setState(() => error = '$e');
+      setState(() => error = msg(e));
     }
   }
 
@@ -600,124 +762,418 @@ class HomeState extends State<Home> {
     return p;
   }
 
+  /// "~/Downloads/Swoop" rather than the full home path.
+  String get shortDir {
+    final home = Platform.environment['HOME'];
+    return home != null && dir!.startsWith('$home/') ? '~${dir!.substring(home.length)}' : dir!;
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final c = theme.colorScheme;
+    final devices = [
+      for (final p in [
+        ...peers,
+        ...manual.where((m) => !peers.any((p) => p.fingerprint == m.fingerprint)),
+      ])
+        device(
+          ValueKey('p${p.fingerprint}'),
+          icon: p.os == 'android' ? Icons.phone_android : Icons.computer,
+          name: p.name,
+          detail:
+              '${p.addr} · code ${p.code}'
+              '${p.link == null ? '' : '\n${p.link}'}'
+              '${p.expected == null ? '' : ' · up to ${speed(p.expected!)}'}',
+          onTap: () => pick(p),
+        ),
+      for (final b in ble.values.where(
+        (b) => ![...peers, ...manual].any((p) => p.fingerprint.startsWith(b.fp)),
+      ))
+        device(
+          ValueKey('b${b.fp}'),
+          icon: Icons.bluetooth,
+          name: b.name.isEmpty ? 'Swoop device' : b.name,
+          detail: 'Not on this network · sends over a direct Wi-Fi link',
+          onTap: () => sendDirect(b),
+        ),
+    ];
+    final top = [
+      AnimatedSize(
+        duration: const Duration(milliseconds: 250),
+        curve: Curves.easeOutCubic,
+        alignment: Alignment.topCenter,
+        child: Column(
+          children: [
+            if (error != null)
+              Appear(
+                key: ValueKey('e$error'),
+                child: banner(
+                  color: c.errorContainer,
+                  on: c.onErrorContainer,
+                  icon: Icons.error_outline,
+                  title: error!,
+                  close: 'Dismiss',
+                  onClose: () => setState(() => error = null),
+                ),
+              ),
+            if (pending != null)
+              Appear(
+                key: const ValueKey('pending'),
+                child: banner(
+                  color: c.primaryContainer,
+                  on: c.onPrimaryContainer,
+                  icon: Icons.send_rounded,
+                  title: 'Send ${describe(pending!)}',
+                  subtitle: 'Tap a device below',
+                  close: 'Cancel',
+                  onClose: () => release(takePending()!),
+                ),
+              ),
+          ],
+        ),
+      ),
+      status(theme),
+    ];
+    final left = [
+      header(
+        theme,
+        'Nearby devices',
+        trailing: me == null
+            ? null
+            : Pulse(size: 20, child: CircleAvatar(radius: 3, backgroundColor: c.primary)),
+      ),
+      if (devices.isEmpty) empty(theme) else ...devices,
+      if (bleError != null)
+        Padding(
+          padding: const EdgeInsets.fromLTRB(4, 12, 4, 0),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Icon(Icons.bluetooth_disabled, size: 16, color: c.onSurfaceVariant),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  'Bluetooth: $bleError. Devices on other networks only show up with Bluetooth on.',
+                  style: theme.textTheme.bodySmall?.copyWith(color: c.onSurfaceVariant),
+                ),
+              ),
+            ],
+          ),
+        ),
+    ];
+    final finished = transfers.any((t) => t.result != null);
+    final right = [
+      header(
+        theme,
+        'Transfers',
+        action: finished
+            ? TextButton(
+                onPressed: () => setState(() => transfers.removeWhere((t) => t.result != null)),
+                child: const Text('Clear finished'),
+              )
+            : null,
+      ),
+      for (final t in transfers) Appear(key: ObjectKey(t), child: TransferCard(t)),
+    ];
     return Scaffold(
       appBar: AppBar(
-        title: Text(me == null ? 'Swoop' : 'Swoop · ${me!.name}'),
+        title: const Text('Swoop'),
         actions: [
-          IconButton(
-            icon: Icon(receiving ? Icons.download : Icons.file_download_off),
-            tooltip: receiving ? 'Receiving: on' : 'Receiving: off (offers are declined)',
-            onPressed: () {
-              setState(() => receiving = !receiving);
-              uft.setReceiving(enabled: receiving);
-            },
-          ),
           IconButton(
             icon: const Icon(Icons.add_link),
             tooltip: 'Connect by address',
             onPressed: me == null ? null : connectByAddress,
           ),
+          const SizedBox(width: 8),
         ],
-        bottom: scanning
-            ? const PreferredSize(
-                preferredSize: Size.fromHeight(2),
-                child: LinearProgressIndicator(minHeight: 2),
-              )
-            : null,
       ),
       body: dropZone(
-        ListView(
-          padding: const EdgeInsets.all(16),
+        theme,
+        SafeArea(
+          top: false,
+          child: LayoutBuilder(
+            builder: (context, box) {
+              // Two columns on a wide window: devices on the left, transfers on the right.
+              if (box.maxWidth >= 900) {
+                final side = (box.maxWidth - 1200).clamp(0, double.infinity) / 2 + 24;
+                return Column(
+                  children: [
+                    Padding(
+                      padding: EdgeInsets.fromLTRB(side, 8, side, 0),
+                      child: Column(children: top),
+                    ),
+                    Expanded(
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Expanded(
+                            child: ListView(
+                              padding: EdgeInsets.fromLTRB(side, 0, 12, 24),
+                              children: left,
+                            ),
+                          ),
+                          Expanded(
+                            child: ListView(
+                              padding: EdgeInsets.fromLTRB(12, 0, side, 24),
+                              children: [...right, if (transfers.isEmpty) hint(theme)],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                );
+              }
+              // One column, kept readable on a medium window.
+              final side = (box.maxWidth - 640).clamp(0, double.infinity) / 2 + 16;
+              return ListView(
+                padding: EdgeInsets.fromLTRB(side, 8, side, 24),
+                children: [...top, ...left, if (transfers.isNotEmpty) ...right],
+              );
+            },
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// This device: its name, whether it takes offers, where files go.
+  Widget status(ThemeData theme) {
+    final c = theme.colorScheme;
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 12, 12, 12),
+        child: Row(
           children: [
-            if (error != null)
-              Card(
-                color: theme.colorScheme.errorContainer,
-                child: ListTile(leading: const Icon(Icons.error), title: Text(error!)),
+            AnimatedContainer(
+              duration: const Duration(milliseconds: 250),
+              width: 40,
+              height: 40,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: receiving && listening ? c.primary : c.surfaceContainerHighest,
               ),
-            if (pending != null)
-              Card(
-                color: theme.colorScheme.primaryContainer,
-                child: ListTile(
-                  leading: const Icon(Icons.send),
-                  title: Text('Send ${describe(pending!)}'),
-                  subtitle: const Text('Tap a device below'),
-                  trailing: IconButton(
-                    icon: const Icon(Icons.close),
-                    tooltip: 'Cancel',
-                    onPressed: () => release(takePending()!),
+              child: Icon(
+                Platform.isAndroid ? Icons.phone_android : Icons.computer,
+                size: 20,
+                color: receiving && listening ? c.onPrimary : c.onSurfaceVariant,
+              ),
+            ),
+            const SizedBox(width: 16),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(me?.name ?? 'Starting…', style: theme.textTheme.titleMedium),
+                  const SizedBox(height: 2),
+                  AnimatedSwitcher(
+                    duration: const Duration(milliseconds: 200),
+                    child: Text(
+                      key: ValueKey((receiving, listening)),
+                      dir == null
+                          ? 'Getting ready'
+                          : !listening
+                          ? "Can't receive files right now"
+                          : receiving
+                          ? 'Visible to nearby devices · saving to $shortDir'
+                          : 'Not receiving · offers are declined',
+                      style: theme.textTheme.bodySmall?.copyWith(color: c.onSurfaceVariant),
+                    ),
                   ),
-                ),
+                ],
               ),
-            if (dir != null)
-              Text('Visible to nearby devices · saving to $dir', style: theme.textTheme.bodySmall),
-            const SizedBox(height: 16),
-            Text('Nearby devices', style: theme.textTheme.titleMedium),
-            if (peers.isEmpty && manual.isEmpty)
-              const Padding(
-                padding: EdgeInsets.symmetric(vertical: 16),
-                child: Text('Looking for devices on this network… Open Swoop on the other device.'),
+            ),
+            const SizedBox(width: 8),
+            Tooltip(
+              message: 'Receive files',
+              child: Switch(
+                value: receiving && listening,
+                onChanged: me == null || !listening
+                    ? null
+                    : (v) {
+                        setState(() => receiving = v);
+                        uft.setReceiving(enabled: v);
+                      },
               ),
-            for (final p in [
-              ...peers,
-              ...manual.where((m) => !peers.any((p) => p.fingerprint == m.fingerprint)),
-            ])
-              Card(
-                child: ListTile(
-                  leading: Icon(p.os == 'android' ? Icons.phone_android : Icons.computer),
-                  title: Text(p.name),
-                  subtitle: Text(
-                    '${p.addr} · code ${p.code}'
-                    '${p.link == null ? '' : '\n${p.link}'}'
-                    '${p.expected == null ? '' : ' · up to ${speed(p.expected!)}'}',
-                  ),
-                  trailing: const Icon(Icons.send),
-                  onTap: () => pick(p),
-                ),
-              ),
-            for (final b in ble.values.where(
-              (b) => ![...peers, ...manual].any((p) => p.fingerprint.startsWith(b.fp)),
-            ))
-              Card(
-                child: ListTile(
-                  leading: const Icon(Icons.bluetooth),
-                  title: Text(b.name.isEmpty ? 'Swoop device' : b.name),
-                  subtitle: const Text('Not on this network · sends over a direct Wi-Fi link'),
-                  trailing: const Icon(Icons.send),
-                  onTap: () => sendDirect(b),
-                ),
-              ),
-            if (bleError != null)
-              Padding(
-                padding: const EdgeInsets.symmetric(vertical: 8),
-                child: Text(
-                  'Bluetooth: $bleError. Devices on other networks only show up with Bluetooth on.',
-                  style: theme.textTheme.bodySmall,
-                ),
-              ),
-            if (transfers.isNotEmpty) ...[
-              const SizedBox(height: 16),
-              Text('Transfers', style: theme.textTheme.titleMedium),
-            ],
-            for (final t in transfers) TransferCard(t),
+            ),
           ],
         ),
       ),
     );
   }
 
+  Widget header(ThemeData theme, String text, {Widget? trailing, Widget? action}) => Padding(
+    padding: const EdgeInsets.fromLTRB(4, 24, 0, 8),
+    child: SizedBox(
+      height: 32,
+      child: Row(
+        children: [
+          Text(
+            text,
+            style: theme.textTheme.titleSmall?.copyWith(
+              color: theme.colorScheme.primary,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(width: 4),
+          ?trailing,
+          if (action != null) ...[const Spacer(), action],
+        ],
+      ),
+    ),
+  );
+
+  Widget device(
+    Key key, {
+    required IconData icon,
+    required String name,
+    required String detail,
+    required VoidCallback onTap,
+  }) {
+    final c = Theme.of(context).colorScheme;
+    return Appear(
+      key: key,
+      child: Card(
+        child: ListTile(
+          contentPadding: const EdgeInsets.fromLTRB(16, 6, 12, 6),
+          leading: CircleAvatar(
+            backgroundColor: c.secondaryContainer,
+            foregroundColor: c.onSecondaryContainer,
+            child: Icon(icon, size: 20),
+          ),
+          title: Text(name, maxLines: 1, overflow: TextOverflow.ellipsis),
+          subtitle: Text(detail),
+          trailing: Icon(Icons.send_rounded, color: c.primary),
+          onTap: onTap,
+        ),
+      ),
+    );
+  }
+
+  Widget banner({
+    required Color color,
+    required Color on,
+    required IconData icon,
+    required String title,
+    String? subtitle,
+    required String close,
+    required VoidCallback onClose,
+  }) => Card(
+    color: color,
+    margin: const EdgeInsets.only(bottom: 8),
+    child: ListTile(
+      iconColor: on,
+      textColor: on,
+      leading: Icon(icon),
+      title: Text(title),
+      subtitle: subtitle == null ? null : Text(subtitle),
+      trailing: IconButton(icon: const Icon(Icons.close), tooltip: close, onPressed: onClose),
+    ),
+  );
+
+  /// No devices yet: what's happening and what to do.
+  Widget empty(ThemeData theme) {
+    final c = theme.colorScheme;
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 24),
+      child: Column(
+        children: [
+          Pulse(
+            size: 128,
+            child: CircleAvatar(
+              radius: 28,
+              backgroundColor: c.primaryContainer,
+              foregroundColor: c.onPrimaryContainer,
+              child: const Icon(Icons.wifi_tethering),
+            ),
+          ),
+          const SizedBox(height: 16),
+          Text(
+            'Looking for devices on this network…',
+            style: theme.textTheme.titleMedium,
+            textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: 4),
+          Text(
+            'Open Swoop on the other device.',
+            style: theme.textTheme.bodyMedium?.copyWith(color: c.onSurfaceVariant),
+            textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: 20),
+          OutlinedButton.icon(
+            onPressed: me == null ? null : connectByAddress,
+            icon: const Icon(Icons.add_link),
+            label: const Text('Connect by address'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// The empty transfers column on a wide window.
+  Widget hint(ThemeData theme) => Padding(
+    padding: const EdgeInsets.fromLTRB(4, 8, 4, 0),
+    child: Text(
+      Platform.isLinux
+          ? 'Nothing sent yet. Tap a device to pick files, or drop files on this window.'
+          : 'Nothing sent yet. Tap a device to pick files.',
+      style: theme.textTheme.bodyMedium?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+    ),
+  );
+
   /// Linux: files or folders dropped on the window wait for a device tap.
-  Widget dropZone(Widget child) => Platform.isLinux
-      ? DropTarget(
-          onDragDone: (d) {
-            if (d.files.isEmpty) return;
-            setState(() => pending = [for (final f in d.files) uft.Pick(path: f.path)]);
-          },
-          child: child,
-        )
-      : child;
+  Widget dropZone(ThemeData theme, Widget child) {
+    if (!Platform.isLinux) return child;
+    final c = theme.colorScheme;
+    return DropTarget(
+      onDragEntered: (_) => setState(() => dragging = true),
+      onDragExited: (_) => setState(() => dragging = false),
+      onDragDone: (d) {
+        setState(() {
+          dragging = false;
+          if (d.files.isNotEmpty) pending = [for (final f in d.files) uft.Pick(path: f.path)];
+        });
+      },
+      child: Stack(
+        children: [
+          child,
+          Positioned.fill(
+            child: IgnorePointer(
+              child: AnimatedOpacity(
+                opacity: dragging ? 1 : 0,
+                duration: const Duration(milliseconds: 150),
+                child: Container(
+                  margin: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: c.primaryContainer.withValues(alpha: 0.92),
+                    borderRadius: BorderRadius.circular(24),
+                    border: Border.all(color: c.primary, width: 2),
+                  ),
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(Icons.upload_file, size: 48, color: c.onPrimaryContainer),
+                      const SizedBox(height: 12),
+                      Text(
+                        'Drop to send',
+                        style: theme.textTheme.titleLarge?.copyWith(color: c.onPrimaryContainer),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        'then tap a device',
+                        style: theme.textTheme.bodyMedium?.copyWith(color: c.onPrimaryContainer),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 }
 
 class TransferCard extends StatelessWidget {
@@ -726,38 +1182,99 @@ class TransferCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final c = theme.colorScheme;
     final running = t.result == null;
-    final frac = t.total > 0 ? t.done / t.total : null;
+    final frac = t.total > 0 ? (t.done / t.total).clamp(0.0, 1.0) : null;
+    final (icon, tint) = t.failed
+        ? (Icons.error_outline, c.error)
+        : running
+        ? (t.sending ? Icons.arrow_upward : Icons.arrow_downward, c.primary)
+        : (Icons.check_circle, c.primary);
+    final muted = theme.textTheme.bodySmall?.copyWith(
+      color: c.onSurfaceVariant,
+      fontFeatures: tabular,
+    );
     return Card(
       child: Padding(
-        padding: const EdgeInsets.all(12),
+        padding: const EdgeInsets.fromLTRB(16, 12, 8, 14),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(t.title, style: Theme.of(context).textTheme.titleSmall),
-            const SizedBox(height: 8),
-            LinearProgressIndicator(
-              value: running ? frac : 1,
-              color: t.failed ? Theme.of(context).colorScheme.error : null,
-            ),
-            const SizedBox(height: 8),
-            Text(
-              t.note != null
-                  ? t.note!
-                  : running
-                  ? '${frac == null ? '' : '${(frac * 100).toStringAsFixed(1)}%  '}'
-                        '${size(t.done)} / ${size(t.total)}  ${speed(t.speed)}  peak ${speed(t.peak)}'
-                        '${t.eta == null ? '' : '  ETA ${duration(t.eta!)}'}'
-                  : t.result!,
-            ),
-            if (running && t.sendId != null)
-              Align(
-                alignment: Alignment.centerRight,
-                child: TextButton(
-                  onPressed: () => uft.cancel(id: t.sendId!),
-                  child: const Text('Cancel'),
-                ),
+            SizedBox(
+              height: 40,
+              child: Row(
+                children: [
+                  AnimatedSwitcher(
+                    duration: const Duration(milliseconds: 250),
+                    transitionBuilder: (child, a) => ScaleTransition(scale: a, child: child),
+                    child: Icon(icon, key: ValueKey(icon), color: tint, size: 20),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Text(
+                      t.title,
+                      style: theme.textTheme.titleSmall,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                  if (running && frac != null && t.note == null)
+                    Padding(
+                      padding: const EdgeInsets.only(left: 8, right: 8),
+                      child: Text(
+                        '${(frac * 100).toStringAsFixed(0)}%',
+                        style: theme.textTheme.labelLarge?.copyWith(
+                          color: c.primary,
+                          fontFeatures: tabular,
+                        ),
+                      ),
+                    ),
+                  if (running && t.sendId != null)
+                    TextButton(
+                      onPressed: () => uft.cancel(id: t.sendId!),
+                      child: const Text('Cancel'),
+                    ),
+                ],
               ),
+            ),
+            const SizedBox(height: 8),
+            Padding(
+              padding: const EdgeInsets.only(right: 8),
+              child: running && frac == null
+                  ? const LinearProgressIndicator()
+                  : TweenAnimationBuilder<double>(
+                      tween: Tween(end: running ? frac : 1),
+                      duration: const Duration(milliseconds: 400),
+                      curve: Curves.easeOutCubic,
+                      builder: (context, v, _) =>
+                          LinearProgressIndicator(value: v, color: t.failed ? c.error : null),
+                    ),
+            ),
+            const SizedBox(height: 10),
+            Padding(
+              padding: const EdgeInsets.only(right: 8),
+              child: t.note != null
+                  ? Text(t.note!, style: muted)
+                  : running
+                  ? SizedBox(
+                      width: double.infinity,
+                      child: Wrap(
+                        alignment: WrapAlignment.spaceBetween,
+                        spacing: 12,
+                        runSpacing: 2,
+                        children: [
+                          Text('${size(t.done)} of ${size(t.total)}', style: muted),
+                          Text(
+                            '${speed(t.speed)} · peak ${speed(t.peak)}'
+                            '${t.eta == null ? '' : ' · ${duration(t.eta!)} left'}',
+                            style: muted,
+                          ),
+                        ],
+                      ),
+                    )
+                  : Text(t.result!, style: t.failed ? muted?.copyWith(color: c.error) : muted),
+            ),
           ],
         ),
       ),
