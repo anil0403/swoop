@@ -118,13 +118,14 @@ jobs:
           UFT_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           UFT_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: |
-          # No key, no APK: one signed with a throwaway key could never be updated by the next release.
+          # No key yet (the owner's choice for now): signed with this runner's throwaway debug key, so each release's
+          # APK only installs after uninstalling the previous one (README).
           if [[ -z $KEYSTORE ]]; then
-            echo "::warning::no ANDROID_KEYSTORE secret; the release has no APK (see VERSIONING.md)"
-            exit 0
+            echo "::warning::no ANDROID_KEYSTORE secret; the APK is signed with a throwaway key (see VERSIONING.md)"
+          else
+            export UFT_KEYSTORE=$RUNNER_TEMP/release.jks
+            base64 -d <<< "$KEYSTORE" > "$UFT_KEYSTORE"
           fi
-          export UFT_KEYSTORE=$RUNNER_TEMP/release.jks
-          base64 -d <<< "$KEYSTORE" > "$UFT_KEYSTORE"
           flutter build apk --release
           mkdir -p ../dist && cp build/app/outputs/flutter-apk/app-release.apk ../dist/swoop-android.apk
       - uses: actions/upload-artifact@v4

@@ -22,9 +22,9 @@ Or as an [AppImage](https://appimage.org) (`chmod +x swoop-$(uname -m).AppImage`
 or from the AUR on Arch (`swoop-bin`, e.g. `yay -S swoop-bin`), all on the
 [releases](https://github.com/anil0403/swoop/releases/latest) page.
 
-Android app (8.0 and newer; in releases once the signing key is set up, see [VERSIONING.md](VERSIONING.md)): open
-`https://github.com/anil0403/swoop/releases/latest/download/swoop-android.apk` on the phone, or
-from a computer with `adb`:
+Android app (8.0 and newer): open `https://github.com/anil0403/swoop/releases/latest/download/swoop-android.apk`
+on the phone, or from a computer with `adb`. For now each release's APK is signed with a different temporary key: to
+update, uninstall the old one first (you pair devices again).
 
 ```sh
 curl -fsSLo /tmp/swoop.apk https://github.com/anil0403/swoop/releases/latest/download/swoop-android.apk && adb install -r /tmp/swoop.apk

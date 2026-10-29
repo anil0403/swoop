@@ -212,8 +212,9 @@ hand** (Actions ▸ version ▸ Run workflow, with `bump`: `auto`, `major`, `min
      `swoop` command, for Termux).
    - **APK signing:** with the release key from the repository secrets `ANDROID_KEYSTORE` (the `.jks` file,
      base64), `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS` and `ANDROID_KEY_PASSWORD`, added by the owner.
-     Without them the release has no APK: Android only installs an update signed with the same key, so the key
-     must stay the same forever, and never be in the repository. To make one (keep it and its passwords safe):
+     Until they're added the APK is signed with the build machine's throwaway debug key, a different one each
+     release, so updating means uninstalling first. Android only installs an update signed with the same key, so the
+     release key must stay the same forever, and never be in the repository. To make one (keep it and its passwords safe):
      `keytool -genkeypair -v -keystore swoop-release.jks -keyalg RSA -keysize 4096 -validity 36500 -alias swoop`,
      then `base64 -w0 swoop-release.jks` is the value of `ANDROID_KEYSTORE`.
 3. Upload (after the owner approves, if the `release` environment has required reviewers) the files and
