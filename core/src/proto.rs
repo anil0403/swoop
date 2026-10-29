@@ -156,11 +156,11 @@ pub fn read_frame<R: Read>(r: &mut R, buf: &mut Vec<u8>) -> io::Result<Frame> {
             }
             let mut h = [0u8; CHUNK_HEADER];
             r.read_exact(&mut h)?;
-            let n = (len - CHUNK_HEADER) as u64;
-            buf.clear();
-            if r.by_ref().take(n).read_to_end(buf)? as u64 != n {
-                return Err(io::ErrorKind::UnexpectedEof.into());
-            }
+            // One read_exact of the whole chunk: big reads skip the BufReader's buffer, where
+            // read_to_end's small growing ones were copied through it (one extra copy of every byte).
+            // Zero-fills only when a pooled buffer grows.
+            buf.resize(len - CHUNK_HEADER, 0);
+            r.read_exact(buf)?;
             Ok(Frame::Chunk {
                 file: u32::from_be_bytes(h[0..4].try_into().unwrap()),
                 index: u64::from_be_bytes(h[4..12].try_into().unwrap()),
