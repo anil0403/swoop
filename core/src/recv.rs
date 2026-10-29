@@ -619,8 +619,21 @@ fn control<S: Read + Write>(
         name: ctx.name.clone(),
     };
     send(&mut s, &welcome)?;
-    let Msg::Offer { chunk_size, files } = proto::read_msg(&mut s)? else {
+    let Msg::Offer {
+        chunk_size,
+        files,
+        dirs,
+    } = proto::read_msg(&mut s)?
+    else {
         return Err(bad("expected offer"));
+    };
+    let Some(dirs) = dirs
+        .iter()
+        .map(|d| safe_rel_path(d))
+        .collect::<Option<Vec<_>>>()
+    else {
+        let reason = "unsafe folder name in offer".into();
+        return send(&mut s, &Msg::Reject { reason });
     };
     let total = files.iter().map(|f| f.size).fold(0u64, u64::saturating_add);
     // Planned first: an offer that can't fit is refused without asking the user.
@@ -670,6 +683,11 @@ fn control<S: Read + Write>(
             total,
             resumed,
         });
+        if !sess.null_sink {
+            for d in &dirs {
+                fs::create_dir_all(sess.dir.join(d))?;
+            }
+        }
         run(&mut s, ctx, id, &sess, now, resumed, total, start)
     });
     ctx.sessions.lock().unwrap().remove(&id);
@@ -903,7 +921,16 @@ mod tests {
                 mtime: f.mtime,
             })
             .collect();
-        send(&mut c, &Msg::Offer { chunk_size, files }).unwrap();
+        let dirs = vec![];
+        send(
+            &mut c,
+            &Msg::Offer {
+                chunk_size,
+                files,
+                dirs,
+            },
+        )
+        .unwrap();
         let reply = proto::read_msg(&mut c).unwrap();
         (c, reply)
     }

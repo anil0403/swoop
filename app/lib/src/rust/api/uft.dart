@@ -9,7 +9,7 @@ import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 import 'package:freezed_annotation/freezed_annotation.dart' hide protected;
 part 'uft.freezed.dart';
 
-// These functions are ignored because they are not marked as `pub`: `ask`, `dropped`, `find`, `incoming`, `into_sink`, `local_link`, `peer`, `start_receive`, `start_scan`, `start_send`, `state`
+// These functions are ignored because they are not marked as `pub`: `ask`, `dropped`, `find`, `incoming`, `into_sink`, `local_link`, `peer`, `start_receive`, `start_scan`, `start_send`, `state`, `to_app`
 // These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `State`
 // These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `clone`, `clone`, `clone`, `fmt`, `fmt`, `fmt`
 
@@ -211,7 +211,8 @@ class Peer {
 }
 
 /// A file or folder to send. `name` set = one file offered under that relative name
-/// (Android's picked files, which arrive as `/proc/self/fd/N`).
+/// (Android's picked files, which arrive as `/proc/self/fd/N`); `name` set and `path` empty =
+/// an empty folder of that name (from Android's folder picker).
 class Pick {
   final String path;
   final String? name;

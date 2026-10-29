@@ -77,6 +77,10 @@ pub enum Msg {
     Offer {
         chunk_size: u64,
         files: Vec<FileEntry>,
+        /// Empty folders to create, relative paths like `files`. Optional on the wire, so
+        /// receivers that predate it just skip them.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        dirs: Vec<String>,
     },
     Accept {
         have: Vec<Vec<u64>>,
@@ -205,6 +209,7 @@ mod tests {
                 size: 5,
                 mtime: 1,
             }],
+            dirs: vec!["a/empty".into()],
         };
         let mut wire = Vec::new();
         write_msg(&mut wire, &msg).unwrap();

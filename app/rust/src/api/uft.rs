@@ -528,7 +528,8 @@ pub enum Outgoing {
 }
 
 /// A file or folder to send. `name` set = one file offered under that relative name
-/// (Android's picked files, which arrive as `/proc/self/fd/N`).
+/// (Android's picked files, which arrive as `/proc/self/fd/N`); `name` set and `path` empty =
+/// an empty folder of that name (from Android's folder picker).
 pub struct Pick {
     pub path: String,
     pub name: Option<String>,
@@ -558,6 +559,7 @@ fn start_send(
         let sources: Vec<Source> = picks
             .into_iter()
             .map(|p| match p.name {
+                Some(name) if p.path.is_empty() => Source::Dir(name),
                 Some(name) => Source::Named {
                     path: p.path.into(),
                     name,

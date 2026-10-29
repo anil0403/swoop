@@ -312,12 +312,13 @@ class MainActivity : FlutterActivity() {
         return listOf(path, name)
     }
 
-    /** Every file under a picked folder, named `folder/sub/file`. */
+    /** Every file under a picked folder, named `folder/sub/file`, and each empty folder as ["", name]. */
     private fun tree(root: Uri): List<List<String>> {
         val rootId = DocumentsContract.getTreeDocumentId(root)
         val out = mutableListOf<List<String>>()
         // ponytail: one open descriptor per file; folders with more files than the fd limit (~32k) fail.
         fun walk(id: String, rel: String) {
+            val before = out.size
             val children = DocumentsContract.buildChildDocumentsUriUsingTree(root, id)
             val cols = arrayOf(Document.COLUMN_DOCUMENT_ID, Document.COLUMN_DISPLAY_NAME, Document.COLUMN_MIME_TYPE)
             contentResolver.query(children, cols, null, null, null)?.use { c ->
@@ -330,6 +331,7 @@ class MainActivity : FlutterActivity() {
                     }
                 }
             }
+            if (out.size == before) out += listOf("", rel)
         }
         walk(rootId, name(DocumentsContract.buildDocumentUriUsingTree(root, rootId)))
         return out

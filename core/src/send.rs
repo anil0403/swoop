@@ -26,6 +26,8 @@ pub enum Source {
     Named { path: PathBuf, name: String },
     /// Generated in memory, never touches disk (benchmarks).
     Synthetic { name: String, size: u64 },
+    /// An empty folder offered as `name` (Android's picked folders, like `Named`).
+    Dir(String),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -70,7 +72,7 @@ pub fn send(
     opts: &SendOptions,
     mut on_progress: impl FnMut(&Snapshot, u32),
 ) -> io::Result<SendStats> {
-    let items = collect(sources)?;
+    let (items, dirs) = collect(sources)?;
     let files: Vec<FileEntry> = items.iter().map(|i| i.entry.clone()).collect();
     let total = files.iter().map(|f| f.size).sum();
     let cfg = tls::client_config(id, server_fp)?;
@@ -101,6 +103,7 @@ pub fn send(
         &Msg::Offer {
             chunk_size: CHUNK_SIZE,
             files: files.clone(),
+            dirs: dirs.clone(),
         },
     )?;
     ctrl.flush()?;
@@ -350,8 +353,10 @@ struct Item {
     src: Option<PathBuf>,
 }
 
-fn collect(sources: &[Source]) -> io::Result<Vec<Item>> {
+/// The files to send, and the empty folders among them.
+fn collect(sources: &[Source]) -> io::Result<(Vec<Item>, Vec<String>)> {
     let mut out = Vec::new();
+    let mut dirs = Vec::new();
     for s in sources {
         match s {
             Source::Synthetic { name, size } => out.push(Item {
@@ -385,17 +390,28 @@ fn collect(sources: &[Source]) -> io::Result<Vec<Item>> {
                         .to_owned(),
                 };
                 let mut found = Vec::new();
-                walk(p, utf8(&name)?, &fs::metadata(p)?, &mut found)?;
+                walk(p, utf8(&name)?, &fs::metadata(p)?, &mut found, &mut dirs)?;
                 found.sort_by(|a, b| a.entry.path.cmp(&b.entry.path));
                 out.extend(found);
             }
+            Source::Dir(name) => dirs.push(name.clone()),
         }
     }
-    Ok(out)
+    dirs.sort();
+    Ok((out, dirs))
 }
 
-fn walk(path: &Path, rel: String, md: &fs::Metadata, out: &mut Vec<Item>) -> io::Result<()> {
+/// Adds the files under `path` to `out`, and its folders with nothing to send in them to `dirs`
+/// (a folder holding only empty folders is made by those).
+fn walk(
+    path: &Path,
+    rel: String,
+    md: &fs::Metadata,
+    out: &mut Vec<Item>,
+    dirs: &mut Vec<String>,
+) -> io::Result<()> {
     if md.is_dir() {
+        let before = (out.len(), dirs.len());
         for e in fs::read_dir(path)? {
             let p = e?.path();
             let md = fs::symlink_metadata(&p)?;
@@ -404,7 +420,10 @@ fn walk(path: &Path, rel: String, md: &fs::Metadata, out: &mut Vec<Item>) -> io:
                 continue;
             }
             let rel = format!("{rel}/{}", utf8(p.file_name().unwrap())?);
-            walk(&p, rel, &md, out)?;
+            walk(&p, rel, &md, out, dirs)?;
+        }
+        if (out.len(), dirs.len()) == before {
+            dirs.push(rel);
         }
     } else if md.is_file() {
         out.push(Item {
@@ -461,17 +480,21 @@ mod tests {
         fs::write(d.join("a.txt"), "").unwrap();
         fs::write(d.join("sub/c"), "ccc").unwrap();
         std::os::unix::fs::symlink(d.join("b.txt"), d.join("link")).unwrap();
+        fs::create_dir_all(d.join("empty")).unwrap();
+        fs::create_dir_all(d.join("nest/deeper")).unwrap();
         fs::write(root.join("single"), "x").unwrap();
 
-        let items = collect(&[
+        let (items, dirs) = collect(&[
             Source::Path(d.clone()),
             Source::Synthetic {
                 name: "mem".into(),
                 size: 9,
             },
             Source::Path(root.join("single")),
+            Source::Dir("picked/none".into()),
         ])
         .unwrap();
+        assert_eq!(dirs, ["d/empty", "d/nest/deeper", "picked/none"]);
         let got: Vec<_> = items
             .iter()
             .map(|i| (i.entry.path.as_str(), i.entry.size))
@@ -500,7 +523,7 @@ mod tests {
             "/proc/self/fd/{}",
             std::os::fd::AsRawFd::as_raw_fd(&f)
         ));
-        let items = collect(&[Source::Named {
+        let (items, _) = collect(&[Source::Named {
             path: fd,
             name: "album/hi.txt".into(),
         }])
@@ -545,13 +568,14 @@ mod tests {
         let path = std::env::temp_dir().join(format!("uft-read-{}", proto::random_u64()));
         let data: Vec<u8> = (0..CHUNK_SIZE + 10).map(|i| (i % 251) as u8).collect();
         fs::write(&path, &data).unwrap();
-        let mut items = collect(&[Source::Path(path.clone())]).unwrap();
+        let mut items = collect(&[Source::Path(path.clone())]).unwrap().0;
         items.extend(
             collect(&[Source::Synthetic {
                 name: "m".into(),
                 size: 7,
             }])
-            .unwrap(),
+            .unwrap()
+            .0,
         );
         let files: Vec<_> = items.iter().map(|i| i.entry.clone()).collect();
         let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
