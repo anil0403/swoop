@@ -23,6 +23,15 @@
   <a href="#build-from-source">Build</a>
 </p>
 
+<p align="center">
+  <img src="assets/screenshots/linux.png" width="100%" alt="Swoop on Linux: nearby devices on the left, a transfer in progress and a finished one on the right">
+</p>
+
+<p align="center">
+  <img src="assets/screenshots/android.png" width="49%" alt="Swoop on Android: nearby devices and a transfer in progress">
+  <img src="assets/screenshots/android-pairing.png" width="49%" alt="Swoop on Android: the pairing code shown when a new device sends">
+</p>
+
 ---
 
 ## Why Swoop
