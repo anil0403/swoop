@@ -1,103 +1,233 @@
-<p align="center"><img src="assets/logo.svg" width="128" alt="Swoop logo"></p>
+<p align="center">
+  <img src="assets/logo.svg" width="112" alt="Swoop logo">
+</p>
 
-# Swoop
+<h1 align="center">Swoop</h1>
 
-Offline, zero-config file transfer between Linux and Android at the full speed of your local link (Wi-Fi, Ethernet, hotspot or Wi-Fi Direct). No internet, no accounts.
+<p align="center">
+  <b>Send files between Linux and Android at the full speed of your local network.</b><br>
+  Offline. Zero setup. No accounts, no cloud, no cables.
+</p>
 
-Status: the transfer engine, the `swoop` command, and the Linux and Android apps work (Android tested on emulators,
-API 26 and 37; real phones pending). See
-[PLAN.md](PLAN.md).
+<p align="center">
+  <a href="https://github.com/anil0403/swoop/releases/latest"><img alt="Latest release" src="https://img.shields.io/github/v/release/anil0403/swoop?color=1D5FD1&label=release"></a>
+  <img alt="Platforms" src="https://img.shields.io/badge/platforms-Linux%20%7C%20Android-1D5FD1">
+  <a href="LICENSE"><img alt="MIT license" src="https://img.shields.io/badge/license-MIT-1D5FD1"></a>
+</p>
+
+<p align="center">
+  <a href="#download">Download</a> ·
+  <a href="#install">Install</a> ·
+  <a href="#getting-started">Getting started</a> ·
+  <a href="#command-line">Command line</a> ·
+  <a href="#build-from-source">Build</a>
+</p>
+
+---
+
+## Why Swoop
+
+Moving a few gigabytes between a phone and a laptop shouldn't mean a USB cable, a cloud upload or a chat app
+that shrinks your videos. Open Swoop on both devices and they find each other on their own. Pick the files and
+they go straight across your Wi-Fi, Ethernet or hotspot, encrypted end to end, at whatever speed the link can
+carry.
+
+## Features
+
+| | |
+|---|---|
+| **Fast** | Parallel streams, a pipelined engine and hardware-accelerated encryption: the network is the limit, not Swoop. |
+| **Zero setup** | Devices on the same network appear automatically. No IP addresses, no pairing menus, no settings. |
+| **Works offline** | No internet needed. No shared network? Swoop sets up a direct Wi-Fi link between the two devices, found over Bluetooth. |
+| **Private and secure** | TLS 1.3 with per-device keys. The first time a new device sends, both screens show the same 6-digit code to confirm. |
+| **Resumes** | A dropped or cancelled transfer continues from where it stopped, with every chunk checked (BLAKE3). |
+| **Any size, any number** | Single huge files or folders of thousands of small ones. Swoop checks free space before it starts. |
+| **Fits in** | Android share sheet, drag and drop on Linux, a QR code for the phone camera, progress in the notification bar, photos straight into the Gallery. |
+| **Light and dark** | A clean interface that follows your system theme, on phones and on wide desktop windows. |
+
+## Supported systems
+
+| Platform | Requirements | Builds |
+|---|---|---|
+| **Linux** | x86_64 or aarch64 (64-bit ARM), glibc 2.35+ (Ubuntu 22.04+, Debian 12+, Fedora 36+, Arch), GTK 3 | App + `swoop` command |
+| **Android** | Android 8.0 or newer | App for 64-bit phones, and one for older 32-bit phones |
+| **Termux** | 64-bit ARM phone | `swoop` command |
+
+## Download
+
+Direct links always point to the newest release. Every release also includes `SHA256SUMS` for checking the
+downloads.
+
+**Android**
+
+| File | For |
+|---|---|
+| [**swoop-android.apk**](https://github.com/anil0403/swoop/releases/latest/download/swoop-android.apk) | Almost every phone (64-bit, about 2017 onward) |
+| [swoop-android-armv7.apk](https://github.com/anil0403/swoop/releases/latest/download/swoop-android-armv7.apk) | Older 32-bit phones |
+
+**Linux**
+
+| File | x86_64 (most PCs) | aarch64 (ARM) |
+|---|---|---|
+| Archive: app + `swoop` command | [swoop-linux-x86_64.tar.gz](https://github.com/anil0403/swoop/releases/latest/download/swoop-linux-x86_64.tar.gz) | [swoop-linux-aarch64.tar.gz](https://github.com/anil0403/swoop/releases/latest/download/swoop-linux-aarch64.tar.gz) |
+| AppImage | [swoop-x86_64.AppImage](https://github.com/anil0403/swoop/releases/latest/download/swoop-x86_64.AppImage) | [swoop-aarch64.AppImage](https://github.com/anil0403/swoop/releases/latest/download/swoop-aarch64.AppImage) |
+| Flatpak | [swoop-x86_64.flatpak](https://github.com/anil0403/swoop/releases/latest/download/swoop-x86_64.flatpak) | |
+
+**Termux:** [swoop-android-aarch64.tar.gz](https://github.com/anil0403/swoop/releases/latest/download/swoop-android-aarch64.tar.gz)
+
+All versions and betas: [Releases](https://github.com/anil0403/swoop/releases).
 
 ## Install
 
-One line, from the newest [release](https://github.com/anil0403/swoop/releases) (no root).
+### Linux
 
-Linux (x86_64 or aarch64, glibc 2.35+, GTK 3): the app (`swoop-app`, also in the app menu as Swoop) and the `swoop`
-command, into `~/.local`. Run it again to update:
+**One line, no root.** Installs the app (in your app menu as Swoop, or run `swoop-app`) and the `swoop` command
+into `~/.local`. Run it again to update.
 
 ```sh
 mkdir -p ~/.local && curl -fsSL https://github.com/anil0403/swoop/releases/latest/download/swoop-linux-$(uname -m).tar.gz | tar -xz -C ~/.local
 ```
 
-Or as an [AppImage](https://appimage.org) (`chmod +x swoop-$(uname -m).AppImage`, then run it), a Flatpak bundle
-(x86_64: `flatpak install --user swoop-x86_64.flatpak`; no direct link without a shared network inside the sandbox),
-or from the AUR on Arch (`swoop-bin`, e.g. `yay -S swoop-bin`), all on the
-[releases](https://github.com/anil0403/swoop/releases/latest) page.
-
-Android app (8.0 and newer): open `https://github.com/anil0403/swoop/releases/latest/download/swoop-android.apk`
-on the phone (`swoop-android-armv7.apk` instead on an old 32-bit phone), or from a computer with `adb`. For now each release's APK is signed with a different temporary key: to
-update, uninstall the old one first (you pair devices again).
+**AppImage**, nothing to install:
 
 ```sh
-curl -fsSLo /tmp/swoop.apk https://github.com/anil0403/swoop/releases/latest/download/swoop-android.apk && adb install -r /tmp/swoop.apk
+chmod +x swoop-x86_64.AppImage && ./swoop-x86_64.AppImage
 ```
 
-The `swoop` command in [Termux](https://termux.dev) (64-bit ARM phones):
+**Flatpak** (x86_64):
+
+```sh
+flatpak install --user swoop-x86_64.flatpak
+```
+
+> The Flatpak can't create a direct Wi-Fi link from inside its sandbox. Use another format if your devices often
+> share no network.
+
+### Android
+
+1. On the phone, open [swoop-android.apk](https://github.com/anil0403/swoop/releases/latest/download/swoop-android.apk)
+   (or [the 32-bit one](https://github.com/anil0403/swoop/releases/latest/download/swoop-android-armv7.apk) on an
+   old phone).
+2. Allow your browser to install apps when Android asks, then tap **Install**.
+
+Or from a computer, with `adb`:
+
+```sh
+curl -fsSLo swoop.apk https://github.com/anil0403/swoop/releases/latest/download/swoop-android.apk && adb install -r swoop.apk
+```
+
+> **Updating:** for now each release is signed with a different temporary key, so Android won't update over the
+> old app. Uninstall the previous version first. Devices are paired again on first use.
+
+### Termux
 
 ```sh
 curl -fsSL https://github.com/anil0403/swoop/releases/latest/download/swoop-android-aarch64.tar.gz | tar -xz -C $PREFIX
 ```
 
-Check with `swoop version`. A beta: use `releases/download/vX.Y.Z-beta.N` in place of `releases/latest/download`.
-Each release has `SHA256SUMS`.
+Check any install with `swoop version`.
 
-## License
+## Getting started
 
-[MIT](LICENSE).
+1. **Open Swoop on both devices.** On the same network they show up in each other's list within a few seconds.
+2. **Send.** Tap the other device and pick files or a folder. On Linux you can also drop files onto the window;
+   on Android, use **Share → Swoop** from any app.
+3. **Accept.** The first time, both screens show the same 6-digit code. Check it matches and tap **Accept**, or
+   **Always accept** to trust that device from now on.
+4. **Done.** Files land in `Downloads/Swoop` (Linux) or `Download/Swoop` (Android). Photos and videos appear in
+   the Gallery.
 
-## Build
+**Devices don't see each other?** Guest Wi-Fi and some office networks block discovery. Tap the **link icon** at
+the top of the app, then scan the QR code with the phone camera or type the address the other device shows.
 
-Linux (Rust stable, cmake, clang):
+**No shared network at all?** Turn on Bluetooth on both devices. Swoop finds the other device over Bluetooth and
+connects the two with a direct Wi-Fi link.
+
+**Not receiving?** Check the switch on the status card at the top. While it's off, Swoop turns down incoming
+files.
+
+### Getting the best speed
+
+Swoop goes as fast as the link allows, so the network decides the speed:
+
+- **Use 5 GHz Wi-Fi** (or 6 GHz). 2.4 GHz is several times slower.
+- **Stay close to the router.** A weak signal means a slow link.
+- **Plug the computer into the router with a cable.** Then only the phone uses Wi-Fi, which roughly doubles what
+  two Wi-Fi devices get through the router.
+
+After each transfer the card shows the size, the average speed and the peak speed.
+
+## Command line
+
+The `swoop` command comes with the Linux install and works on its own: on servers, over SSH, or in Termux.
+
+```sh
+swoop recv --dir ~/Downloads        # receive: nearby devices can now find this one
+swoop scan                          # list devices that are receiving
+swoop send phone-name photos/ a.mp4 # send to a device by name, fingerprint, address or swoop:// link
+swoop bench --size 4G               # measure this machine's engine speed
+```
+
+`recv` prints a `swoop://` link to use when scanning can't reach. When an unknown device sends, both sides show
+the same pairing code; answer `a` to always trust that device.
+
+## Build from source
+
+<details>
+<summary><b>Rust core and the <code>swoop</code> command</b> (Rust stable)</summary>
 
 ```sh
 cd core
-cargo build --release
-./target/release/swoop bench --size 4G         # in-process loopback benchmark
-./target/release/swoop recv --dir ~/Downloads  # receiver: nearby devices find it
-./target/release/swoop scan                    # on another device: list receivers
-./target/release/swoop send phone-name file1 dir2
+cargo build --release   # -> target/release/swoop
 ```
 
-`send` takes a device name or fingerprint prefix from `scan`, an address, or the `swoop://` link that `recv`
-prints (for networks where scanning can't reach). The receiver confirms a device it doesn't know yet: both sides
-show the same pairing code; answer `a` to trust that device from then on.
-
-The Linux app (Flutter, see `app/.flutter-version`, plus the Linux build tools: clang, cmake, ninja, GTK 3
-headers):
-
-```sh
-cd app
-flutter build linux --release  # -> build/linux/x64/release/bundle/swoop-app
-./test-e2e.sh                  # full flow, app ↔ CLI in a network namespace (needs sudo and a display)
-```
-
-Devices on networks where they can't find each other (guest Wi-Fi, different subnets): tap the link icon in the
-app and type the other device's address, or one of the `swoop://` links it shows there.
-
-The Android app (also needs a JDK 17+ and the Android SDK; set `JAVA_HOME`):
-
-```sh
-cd app
-flutter build apk --release --split-per-abi   # -> build/app/outputs/flutter-apk/app-arm64-v8a-release.apk, …
-emulator -avd NAME -no-window & ./test-android.sh   # full flow, app ↔ CLI on this computer (or a phone over adb)
-```
-
-The `swoop` command for Android (NDK, API 26+):
+For Android (NDK from `$ANDROID_NDK_HOME`, `$ANDROID_NDK_LATEST_HOME` or the newest `~/Android/Sdk/ndk/*`):
 
 ```sh
 rustup target add aarch64-linux-android
 scripts/build-android.sh   # or: scripts/build-android.sh armv7-linux-androideabi x86_64-linux-android
-# -> core/target/aarch64-linux-android/release/swoop
 ```
 
-The NDK comes from `$ANDROID_NDK_HOME`, `$ANDROID_NDK_LATEST_HOME`, or the newest `~/Android/Sdk/ndk/*`.
-
-Run it in [Termux](https://termux.dev) (binaries can't execute from shared storage, so copy into Termux's `$HOME`):
+To run a self-built `swoop` in Termux, copy it into Termux's `$HOME` first; binaries can't run from shared
+storage:
 
 ```sh
 adb push core/target/aarch64-linux-android/release/swoop /data/local/tmp/
 # in Termux:
-cp /data/local/tmp/swoop ~ && chmod +x ~/swoop
-~/swoop bench --size 2G
-termux-setup-storage && ~/swoop recv --dir ~/storage/downloads
+cp /data/local/tmp/swoop ~ && chmod +x ~/swoop && ~/swoop version
 ```
+
+</details>
+
+<details>
+<summary><b>Linux app</b> (Flutter from <code>app/.flutter-version</code>, clang, cmake, ninja, GTK 3 headers)</summary>
+
+```sh
+cd app
+flutter build linux --release   # -> build/linux/x64/release/bundle/swoop-app
+./test-e2e.sh                   # full flow, app ↔ CLI in a network namespace (needs sudo and a display)
+```
+
+</details>
+
+<details>
+<summary><b>Android app</b> (also a JDK 17+ and the Android SDK, with <code>JAVA_HOME</code> set)</summary>
+
+```sh
+cd app
+flutter build apk --release --split-per-abi   # -> build/app/outputs/flutter-apk/app-arm64-v8a-release.apk, …
+emulator -avd NAME -no-window & ./test-android.sh   # full flow, app ↔ CLI (or a phone over adb)
+```
+
+</details>
+
+## Project
+
+- [PLAN.md](PLAN.md): design, architecture and progress.
+- [VERSIONING.md](VERSIONING.md): how versions and releases are made from commit messages.
+- **Status:** the engine, the command and both apps are working and released. Real-phone testing of every
+  Android feature is in progress.
+
+## License
+
+[MIT](LICENSE) © anil0403
