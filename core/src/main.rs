@@ -25,6 +25,8 @@ const USAGE: &str = "usage:
   swoop send DEVICE PATH... [--streams auto|N]
   swoop send DEVICE --synthetic SIZE [--streams auto|N]
   swoop bench [--size SIZE] [--streams auto|N]
+  swoop forget DEVICE                      forget a device sent to or trusted: the next
+                                           transfer checks its pairing code again
 DEVICE: a name or fingerprint prefix from `swoop scan`, a HOST[:PORT] (optionally
         followed by its FINGERPRINT), or a swoop:// link printed by `swoop recv`
 --yes:  accept every offer (otherwise unknown devices are confirmed with a code)
@@ -54,6 +56,9 @@ enum Cmd {
     Bench {
         size: u64,
         streams: Streams,
+    },
+    Forget {
+        device: String,
     },
 }
 
@@ -211,6 +216,12 @@ fn parse_args(args: &[String]) -> Result<Cmd, String> {
                 streams,
             })
         }
+        "forget" => match pos.as_slice() {
+            [device] => Ok(Cmd::Forget {
+                device: device.to_string(),
+            }),
+            _ => Err("forget needs one DEVICE (a name or fingerprint prefix)".into()),
+        },
         c => Err(format!("unknown command {c:?}")),
     }
 }
@@ -474,6 +485,31 @@ fn run(cmd: Cmd) -> Res<()> {
         Cmd::Help => println!("{USAGE}"),
         Cmd::Version => println!("swoop {}", env!("CARGO_PKG_VERSION")),
         Cmd::Id => println!("{}", identity()?.fingerprint()),
+        Cmd::Forget { device } => {
+            let dir = config()?;
+            let want = device.trim().to_ascii_lowercase();
+            let mut forgot = std::collections::BTreeMap::new();
+            for mut t in [Trust::load_file(dir.join("known"))?, Trust::load(&dir)?] {
+                let hits: Vec<(String, String)> = t
+                    .entries()
+                    .filter(|(f, n)| {
+                        n.trim().eq_ignore_ascii_case(&want)
+                            || (want.len() >= 4 && f.to_ascii_lowercase().starts_with(&want))
+                    })
+                    .map(|(f, n)| (f.to_owned(), n.to_owned()))
+                    .collect();
+                for (f, n) in hits {
+                    t.remove(&f)?;
+                    forgot.insert(f, n);
+                }
+            }
+            if forgot.is_empty() {
+                return Err(format!("no known device {device:?}").into());
+            }
+            for (f, n) in forgot {
+                println!("forgot {n} ({})", &f[..16]);
+            }
+        }
         Cmd::Recv {
             dir,
             port,
@@ -709,6 +745,13 @@ mod tests {
         assert_eq!(parse_args(&[]), Ok(Cmd::Help));
         assert_eq!(parse_args(&args("recv --help")), Ok(Cmd::Help));
         assert_eq!(parse_args(&args("id")), Ok(Cmd::Id));
+        assert_eq!(
+            parse_args(&args("forget laptop")),
+            Ok(Cmd::Forget {
+                device: "laptop".into()
+            })
+        );
+        assert!(parse_args(&args("forget")).is_err());
         assert_eq!(parse_args(&args("--version")), Ok(Cmd::Version));
         assert_eq!(
             parse_args(&args("recv")),

@@ -107,6 +107,22 @@ impl Trust {
         self.fps.insert(fp.to_owned(), name);
         Ok(())
     }
+
+    /// Every device in here: fingerprint and name.
+    pub fn entries(&self) -> impl Iterator<Item = (&str, &str)> {
+        self.fps.iter().map(|(f, n)| (f.as_str(), n.as_str()))
+    }
+
+    /// Forgets `fp` (rewrites the file); false if it wasn't in here.
+    pub fn remove(&mut self, fp: &str) -> io::Result<bool> {
+        if self.fps.remove(fp).is_none() {
+            return Ok(false);
+        }
+        let text: String = self.entries().map(|(f, n)| format!("{f} {n}\n")).collect();
+        // Already exists with mode 0600; writing keeps it.
+        fs::write(&self.path, text)?;
+        Ok(true)
+    }
 }
 
 /// 64 hex chars, as `tls::fingerprint` makes.
@@ -161,6 +177,12 @@ mod tests {
         assert!(t.contains(&a) && t.contains(&b));
         assert!(t.has_name(" MY PHONE") && !t.has_name("again"));
         assert_eq!(t.fps.len(), 2);
+
+        let mut t = t;
+        assert!(t.remove(&a).unwrap() && !t.remove(&a).unwrap());
+        let t = Trust::load(&dir).unwrap();
+        assert!(!t.contains(&a) && t.contains(&b));
+        assert_eq!(fs::read_to_string(&path).unwrap().lines().count(), 1);
         fs::remove_dir_all(dir).unwrap();
     }
 }
