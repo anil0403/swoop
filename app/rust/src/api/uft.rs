@@ -5,12 +5,13 @@ use crate::frb_generated::StreamSink;
 use std::collections::HashMap;
 use std::net::{Ipv4Addr, SocketAddr, TcpListener, UdpSocket};
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicI64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicI64, Ordering};
 use std::sync::mpsc::{channel, Sender};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use uft::discover::{self, Device, Found};
+use uft::link::{self, Link};
 use uft::pair::{self, Trust};
 use uft::progress::Meter;
 use uft::recv::{self, Offer, RecvEvent, RecvOptions};
@@ -27,7 +28,21 @@ struct State {
     name: String,
     trust: Mutex<Trust>,
     offers: Mutex<HashMap<i64, Sender<(bool, bool)>>>,
+    /// Devices the user accepted while the app runs: a transfer resuming after a dropped
+    /// connection isn't asked about again.
+    accepted: Mutex<HashMap<String, Instant>>,
+    /// Running sends by the app's id, for `cancel`.
+    sends: Mutex<HashMap<i64, Arc<AtomicBool>>>,
+    /// This device's link and when it was read; Android's comes from the app (`set_link`).
+    link: Mutex<(Option<Link>, Option<Instant>)>,
+    /// Links other devices announced, by fingerprint, for `diagnose`.
+    links: Mutex<HashMap<String, Link>>,
 }
+
+/// How long an accepted device's resumed offers pass without asking.
+const ACCEPTED_FOR: Duration = Duration::from_secs(30 * 60);
+/// How long a send keeps trying to reach the receiver again after the connection drops.
+const RECONNECT_FOR: Duration = Duration::from_secs(120);
 
 static STATE: OnceLock<State> = OnceLock::new();
 static NEXT_OFFER: AtomicI64 = AtomicI64::new(1);
@@ -58,6 +73,10 @@ pub fn init(config_dir: String, name: String) -> Result<Me, String> {
             name,
             trust: Mutex::new(trust),
             offers: Mutex::new(HashMap::new()),
+            accepted: Mutex::new(HashMap::new()),
+            sends: Mutex::new(HashMap::new()),
+            link: Mutex::new((None, None)),
+            links: Mutex::new(HashMap::new()),
         });
     }
     let st = state()?;
@@ -76,6 +95,10 @@ pub struct Peer {
     pub addr: String,
     /// Pairing code both devices show.
     pub code: String,
+    /// Its network link, e.g. "Wi-Fi 5 GHz · 866 Mbps · -60 dBm", if it says.
+    pub link: Option<String>,
+    /// Best case between the two links, bytes/s.
+    pub expected: Option<f64>,
 }
 
 fn peer(f: &Found, me: &str) -> Peer {
@@ -85,7 +108,48 @@ fn peer(f: &Found, me: &str) -> Peer {
         fingerprint: f.device.fp.clone(),
         addr: f.addrs[0].to_string(),
         code: pair::code(me, &f.device.fp),
+        link: f.device.link.as_ref().map(link::describe),
+        expected: f.device.link.as_ref().zip(local_link()).and_then(|(a, b)| link::expected(a, &b)),
     }
+}
+
+/// This device's link, re-read at most every 10 s (`iw` runs on Linux).
+fn local_link() -> Option<Link> {
+    let mut l = state().ok()?.link.lock().unwrap();
+    if !cfg!(target_os = "android") && l.1.is_none_or(|t| t.elapsed() >= Duration::from_secs(10)) {
+        *l = (link::local(), Some(Instant::now()));
+    }
+    l.0.clone()
+}
+
+/// Android's link, from the platform side (Rust can't read it there).
+#[flutter_rust_bridge::frb(sync)]
+pub fn set_link(kind: Option<String>, mhz: Option<u32>, mbps: Option<u32>, dbm: Option<i32>) {
+    if let Ok(st) = state() {
+        *st.link.lock().unwrap() = (kind.map(|kind| Link { kind, mhz, mbps, dbm }), Some(Instant::now()));
+    }
+}
+
+/// "This device: … · Other device: … · up to N MB/s · tip", for the device with `fingerprint`
+/// after a transfer at `speed` bytes/s; None when neither link is known.
+#[flutter_rust_bridge::frb(sync)]
+pub fn diagnose(fingerprint: String, speed: f64) -> Option<String> {
+    let me = local_link();
+    let peer = state().ok()?.links.lock().unwrap().get(&fingerprint).cloned();
+    if me.is_none() && peer.is_none() {
+        return None;
+    }
+    let side = |l: &Option<Link>| l.as_ref().map_or("unknown".into(), link::describe);
+    let mut line = format!("This device: {} · Other device: {}", side(&me), side(&peer));
+    if let (Some(a), Some(b)) = (&me, &peer) {
+        if let Some(e) = link::expected(a, b) {
+            line += &format!(" · up to {:.0} MB/s", e / 1e6);
+        }
+        if let Some(t) = link::tip(a, b, speed) {
+            line += &format!(" · {t}");
+        }
+    }
+    Some(line)
 }
 
 /// This device as `uft://IP:PORT/FINGERPRINT`, one per local network: what to type on a device that can't find it.
@@ -121,6 +185,8 @@ pub fn connect(target: String) -> Result<Peer, String> {
             code: pair::code(me, &fp),
             fingerprint: fp,
             addr: with_port(host)?.to_string(),
+            link: None,
+            expected: None,
         });
     }
     let addr = with_port(target)?;
@@ -149,6 +215,9 @@ pub fn scan(secs: u32, sink: StreamSink<Vec<Peer>>) -> Result<(), String> {
         let _ = discover::scan(DEFAULT_PORT, Duration::from_secs(secs.into()), &[], |f| {
             if f.device.fp == me {
                 return false;
+            }
+            if let (Some(l), Ok(st)) = (&f.device.link, state()) {
+                st.links.lock().unwrap().insert(f.device.fp.clone(), l.clone());
             }
             let p = peer(f, &me);
             match list.iter_mut().find(|x| x.fingerprint == p.fingerprint) {
@@ -210,8 +279,14 @@ pub fn receive(dir: String, sink: StreamSink<Incoming>) -> Result<(), String> {
         name: st.name.clone(),
         os: std::env::consts::OS.into(),
         port: DEFAULT_PORT,
+        link: None,
     };
-    thread::spawn(move || discover::respond(udp, &me));
+    thread::spawn(move || {
+        discover::respond(udp, move || Device {
+            link: local_link(),
+            ..me.clone()
+        })
+    });
 
     let asks = sink.clone();
     let accept: recv::Accept = Arc::new(move |o: &Offer| ask(o, &asks));
@@ -295,7 +370,9 @@ fn incoming(ev: RecvEvent, meters: &Mutex<HashMap<u64, Meter>>) -> Incoming {
 /// Trusted devices pass; others wait for the user's `answer`.
 fn ask(o: &Offer, sink: &StreamSink<Incoming>) -> bool {
     let Some(st) = STATE.get() else { return false };
-    if st.trust.lock().unwrap().contains(&o.peer_fp) {
+    if st.trust.lock().unwrap().contains(&o.peer_fp)
+        || st.accepted.lock().unwrap().get(&o.peer_fp).is_some_and(|t| t.elapsed() < ACCEPTED_FOR)
+    {
         return true;
     }
     let id = NEXT_OFFER.fetch_add(1, Ordering::Relaxed);
@@ -319,6 +396,7 @@ fn ask(o: &Offer, sink: &StreamSink<Incoming>) -> bool {
     st.offers.lock().unwrap().remove(&id);
     match reply {
         Some((true, always)) => {
+            st.accepted.lock().unwrap().insert(o.peer_fp.clone(), Instant::now());
             if always {
                 let _ = st.trust.lock().unwrap().add(&o.peer_fp, &o.peer_name);
             }
@@ -355,6 +433,10 @@ pub enum Outgoing {
         avg: f64,
         peak: f64,
     },
+    /// The connection dropped; looking for the receiver again (maybe on another network) to resume.
+    Reconnecting {
+        error: String,
+    },
     Failed {
         error: String,
     },
@@ -367,10 +449,19 @@ pub struct Pick {
     pub name: Option<String>,
 }
 
-/// Sends files and folders to `peer`; reports progress, then Done or Failed.
-pub fn send_files(peer: Peer, picks: Vec<Pick>, sink: StreamSink<Outgoing>) -> Result<(), String> {
+/// Sends files and folders to `peer`; reports progress, then Done or Failed. `id` is the app's,
+/// for `cancel`. A dropped connection is retried for a while, on whichever path finds the
+/// receiver; the transfer resumes where it stopped.
+pub fn send_files(
+    id: i64,
+    peer: Peer,
+    picks: Vec<Pick>,
+    sink: StreamSink<Outgoing>,
+) -> Result<(), String> {
     let st = state()?;
-    let addr: SocketAddr = peer.addr.parse().map_err(|e| format!("{}: {e}", peer.addr))?;
+    let mut addr: SocketAddr = peer.addr.parse().map_err(|e| format!("{}: {e}", peer.addr))?;
+    let cancel = Arc::new(AtomicBool::new(false));
+    st.sends.lock().unwrap().insert(id, cancel.clone());
     thread::spawn(move || {
         let sources: Vec<Source> = picks
             .into_iter()
@@ -385,17 +476,38 @@ pub fn send_files(peer: Peer, picks: Vec<Pick>, sink: StreamSink<Outgoing>) -> R
         let opts = SendOptions {
             streams: Streams::Auto,
             name: st.name.clone(),
+            cancel: Some(cancel.clone()),
         };
-        let r = send::send(addr, &st.id, &peer.fingerprint, &sources, &opts, |s, streams| {
-            let _ = sink.add(Outgoing::Progress {
-                done: s.done as i64,
-                total: s.total as i64,
-                speed: s.speed,
-                peak: s.peak,
-                eta: s.eta,
-                streams,
+        let mut last_ok = Instant::now();
+        let r = loop {
+            let r = send::send(addr, &st.id, &peer.fingerprint, &sources, &opts, |s, streams| {
+                last_ok = Instant::now();
+                let _ = sink.add(Outgoing::Progress {
+                    done: s.done as i64,
+                    total: s.total as i64,
+                    speed: s.speed,
+                    peak: s.peak,
+                    eta: s.eta,
+                    streams,
+                });
             });
-        });
+            match r {
+                Err(e) if dropped(&e) && last_ok.elapsed() < RECONNECT_FOR => {
+                    let _ = sink.add(Outgoing::Reconnecting {
+                        error: e.to_string(),
+                    });
+                    thread::sleep(Duration::from_secs(2));
+                    if cancel.load(Ordering::Relaxed) {
+                        break Err(std::io::Error::new(std::io::ErrorKind::Interrupted, "cancelled"));
+                    }
+                    if let Some(a) = find(&peer.fingerprint, addr) {
+                        addr = a;
+                    }
+                }
+                r => break r,
+            }
+        };
+        st.sends.lock().unwrap().remove(&id);
         let _ = sink.add(match r {
             Ok(s) => Outgoing::Done {
                 bytes: s.bytes as i64,
@@ -410,4 +522,42 @@ pub fn send_files(peer: Peer, picks: Vec<Pick>, sink: StreamSink<Outgoing>) -> R
         });
     });
     Ok(())
+}
+
+/// Stops the send `id`; the receiver keeps what arrived, so sending again resumes.
+#[flutter_rust_bridge::frb(sync)]
+pub fn cancel(id: i64) {
+    if let Some(c) = STATE.get().and_then(|st| st.sends.lock().unwrap().get(&id).cloned()) {
+        c.store(true, Ordering::Relaxed);
+    }
+}
+
+/// A network failure worth retrying, not a refusal or a local error.
+fn dropped(e: &std::io::Error) -> bool {
+    use std::io::ErrorKind::*;
+    matches!(
+        e.kind(),
+        ConnectionReset
+            | ConnectionAborted
+            | ConnectionRefused
+            | BrokenPipe
+            | TimedOut
+            | WouldBlock
+            | UnexpectedEof
+            | NotConnected
+            | HostUnreachable
+            | NetworkUnreachable
+            | NetworkDown
+    )
+}
+
+/// The receiver's best address now (another path if the old one went away), also asking `old`
+/// directly for receivers outside the scanned networks.
+fn find(fp: &str, old: SocketAddr) -> Option<SocketAddr> {
+    let extra: Vec<Ipv4Addr> = match old.ip() {
+        std::net::IpAddr::V4(ip) => vec![ip],
+        _ => vec![],
+    };
+    let found = discover::scan(old.port(), Duration::from_secs(3), &extra, |f| f.device.fp == fp).ok()?;
+    Some(*found.iter().find(|f| f.device.fp == fp)?.addrs.first()?)
 }

@@ -9,13 +9,27 @@ import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 import 'package:freezed_annotation/freezed_annotation.dart' hide protected;
 part 'uft.freezed.dart';
 
-// These functions are ignored because they are not marked as `pub`: `ask`, `incoming`, `peer`, `state`
+// These functions are ignored because they are not marked as `pub`: `ask`, `dropped`, `find`, `incoming`, `local_link`, `peer`, `state`
 // These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `State`
 // These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `clone`, `clone`, `clone`, `fmt`, `fmt`, `fmt`
 
 /// Loads or creates this device's identity in `config_dir`. `name` is shown to other devices.
 Future<Me> init({required String configDir, required String name}) =>
     RustLib.instance.api.crateApiUftInit(configDir: configDir, name: name);
+
+/// Android's link, from the platform side (Rust can't read it there).
+void setLink({String? kind, int? mhz, int? mbps, int? dbm}) => RustLib
+    .instance
+    .api
+    .crateApiUftSetLink(kind: kind, mhz: mhz, mbps: mbps, dbm: dbm);
+
+/// "This device: … · Other device: … · up to N MB/s · tip", for the device with `fingerprint`
+/// after a transfer at `speed` bytes/s; None when neither link is known.
+String? diagnose({required String fingerprint, required double speed}) =>
+    RustLib.instance.api.crateApiUftDiagnose(
+      fingerprint: fingerprint,
+      speed: speed,
+    );
 
 /// This device as `uft://IP:PORT/FINGERPRINT`, one per local network: what to type on a device that can't find it.
 List<String> myLinks() => RustLib.instance.api.crateApiUftMyLinks();
@@ -44,9 +58,19 @@ void answer({
   always: always,
 );
 
-/// Sends files and folders to `peer`; reports progress, then Done or Failed.
-Stream<Outgoing> sendFiles({required Peer peer, required List<Pick> picks}) =>
-    RustLib.instance.api.crateApiUftSendFiles(peer: peer, picks: picks);
+/// Sends files and folders to `peer`; reports progress, then Done or Failed. `id` is the app's,
+/// for `cancel`. A dropped connection is retried for a while, on whichever path finds the
+/// receiver; the transfer resumes where it stopped.
+Stream<Outgoing> sendFiles({
+  required PlatformInt64 id,
+  required Peer peer,
+  required List<Pick> picks,
+}) =>
+    RustLib.instance.api.crateApiUftSendFiles(id: id, peer: peer, picks: picks);
+
+/// Stops the send `id`; the receiver keeps what arrived, so sending again resumes.
+void cancel({required PlatformInt64 id}) =>
+    RustLib.instance.api.crateApiUftCancel(id: id);
 
 @freezed
 sealed class Incoming with _$Incoming {
@@ -124,6 +148,10 @@ sealed class Outgoing with _$Outgoing {
     required double avg,
     required double peak,
   }) = Outgoing_Done;
+
+  /// The connection dropped; looking for the receiver again (maybe on another network) to resume.
+  const factory Outgoing.reconnecting({required String error}) =
+      Outgoing_Reconnecting;
   const factory Outgoing.failed({required String error}) = Outgoing_Failed;
 }
 
@@ -138,12 +166,20 @@ class Peer {
   /// Pairing code both devices show.
   final String code;
 
+  /// Its network link, e.g. "Wi-Fi 5 GHz · 866 Mbps · -60 dBm", if it says.
+  final String? link;
+
+  /// Best case between the two links, bytes/s.
+  final double? expected;
+
   const Peer({
     required this.name,
     required this.os,
     required this.fingerprint,
     required this.addr,
     required this.code,
+    this.link,
+    this.expected,
   });
 
   @override
@@ -152,7 +188,9 @@ class Peer {
       os.hashCode ^
       fingerprint.hashCode ^
       addr.hashCode ^
-      code.hashCode;
+      code.hashCode ^
+      link.hashCode ^
+      expected.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -163,7 +201,9 @@ class Peer {
           os == other.os &&
           fingerprint == other.fingerprint &&
           addr == other.addr &&
-          code == other.code;
+          code == other.code &&
+          link == other.link &&
+          expected == other.expected;
 }
 
 /// A file or folder to send. `name` set = one file offered under that relative name

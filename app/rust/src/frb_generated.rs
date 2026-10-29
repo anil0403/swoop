@@ -39,7 +39,7 @@ flutter_rust_bridge::frb_generated_boilerplate!(
     default_rust_auto_opaque = RustAutoOpaqueMoi,
 );
 pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_VERSION: &str = "2.13.0";
-pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = -843475807;
+pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = 678266812;
 
 // Section: executor
 
@@ -153,6 +153,38 @@ fn wire__crate__api__direct__ble_start_impl(
         },
     )
 }
+fn wire__crate__api__uft__cancel_impl(
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync::<flutter_rust_bridge::for_generated::SseCodec, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "cancel",
+            port: None,
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Sync,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_id = <i64>::sse_decode(&mut deserializer);
+            deserializer.end();
+            transform_result_sse::<_, ()>((move || {
+                let output_ok = Ok::<_, ()>({
+                    crate::api::uft::cancel(api_id);
+                })?;
+                std::result::Result::Ok(output_ok)
+            })())
+        },
+    )
+}
 fn wire__crate__api__uft__connect_impl(
     port_: flutter_rust_bridge::for_generated::MessagePort,
     ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
@@ -183,6 +215,37 @@ fn wire__crate__api__uft__connect_impl(
                     std::result::Result::Ok(output_ok)
                 })())
             }
+        },
+    )
+}
+fn wire__crate__api__uft__diagnose_impl(
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync::<flutter_rust_bridge::for_generated::SseCodec, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "diagnose",
+            port: None,
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Sync,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_fingerprint = <String>::sse_decode(&mut deserializer);
+            let api_speed = <f64>::sse_decode(&mut deserializer);
+            deserializer.end();
+            transform_result_sse::<_, ()>((move || {
+                let output_ok = Ok::<_, ()>(crate::api::uft::diagnose(api_fingerprint, api_speed))?;
+                std::result::Result::Ok(output_ok)
+            })())
         },
     )
 }
@@ -478,6 +541,7 @@ fn wire__crate__api__uft__send_files_impl(
             };
             let mut deserializer =
                 flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_id = <i64>::sse_decode(&mut deserializer);
             let api_peer = <crate::api::uft::Peer>::sse_decode(&mut deserializer);
             let api_picks = <Vec<crate::api::uft::Pick>>::sse_decode(&mut deserializer);
             let api_sink = <StreamSink<
@@ -487,10 +551,46 @@ fn wire__crate__api__uft__send_files_impl(
             deserializer.end();
             move |context| {
                 transform_result_sse::<_, String>((move || {
-                    let output_ok = crate::api::uft::send_files(api_peer, api_picks, api_sink)?;
+                    let output_ok =
+                        crate::api::uft::send_files(api_id, api_peer, api_picks, api_sink)?;
                     std::result::Result::Ok(output_ok)
                 })())
             }
+        },
+    )
+}
+fn wire__crate__api__uft__set_link_impl(
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync::<flutter_rust_bridge::for_generated::SseCodec, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "set_link",
+            port: None,
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Sync,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_kind = <Option<String>>::sse_decode(&mut deserializer);
+            let api_mhz = <Option<u32>>::sse_decode(&mut deserializer);
+            let api_mbps = <Option<u32>>::sse_decode(&mut deserializer);
+            let api_dbm = <Option<i32>>::sse_decode(&mut deserializer);
+            deserializer.end();
+            transform_result_sse::<_, ()>((move || {
+                let output_ok = Ok::<_, ()>({
+                    crate::api::uft::set_link(api_kind, api_mhz, api_mbps, api_dbm);
+                })?;
+                std::result::Result::Ok(output_ok)
+            })())
         },
     )
 }
@@ -624,6 +724,13 @@ impl SseDecode for f64 {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
         deserializer.cursor.read_f64::<NativeEndian>().unwrap()
+    }
+}
+
+impl SseDecode for i32 {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        deserializer.cursor.read_i32::<NativeEndian>().unwrap()
     }
 }
 
@@ -792,6 +899,28 @@ impl SseDecode for Option<f64> {
     }
 }
 
+impl SseDecode for Option<i32> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        if (<bool>::sse_decode(deserializer)) {
+            return Some(<i32>::sse_decode(deserializer));
+        } else {
+            return None;
+        }
+    }
+}
+
+impl SseDecode for Option<u32> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        if (<bool>::sse_decode(deserializer)) {
+            return Some(<u32>::sse_decode(deserializer));
+        } else {
+            return None;
+        }
+    }
+}
+
 impl SseDecode for crate::api::uft::Outgoing {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
@@ -829,6 +958,10 @@ impl SseDecode for crate::api::uft::Outgoing {
             }
             2 => {
                 let mut var_error = <String>::sse_decode(deserializer);
+                return crate::api::uft::Outgoing::Reconnecting { error: var_error };
+            }
+            3 => {
+                let mut var_error = <String>::sse_decode(deserializer);
                 return crate::api::uft::Outgoing::Failed { error: var_error };
             }
             _ => {
@@ -846,12 +979,16 @@ impl SseDecode for crate::api::uft::Peer {
         let mut var_fingerprint = <String>::sse_decode(deserializer);
         let mut var_addr = <String>::sse_decode(deserializer);
         let mut var_code = <String>::sse_decode(deserializer);
+        let mut var_link = <Option<String>>::sse_decode(deserializer);
+        let mut var_expected = <Option<f64>>::sse_decode(deserializer);
         return crate::api::uft::Peer {
             name: var_name,
             os: var_os,
             fingerprint: var_fingerprint,
             addr: var_addr,
             code: var_code,
+            link: var_link,
+            expected: var_expected,
         };
     }
 }
@@ -901,13 +1038,6 @@ impl SseDecode for crate::api::direct::Wifi {
     }
 }
 
-impl SseDecode for i32 {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
-        deserializer.cursor.read_i32::<NativeEndian>().unwrap()
-    }
-}
-
 fn pde_ffi_dispatcher_primary_impl(
     func_id: i32,
     port: flutter_rust_bridge::for_generated::MessagePort,
@@ -919,16 +1049,16 @@ fn pde_ffi_dispatcher_primary_impl(
     match func_id {
         2 => wire__crate__api__direct__ble_invite_impl(port, ptr, rust_vec_len, data_len),
         3 => wire__crate__api__direct__ble_start_impl(port, ptr, rust_vec_len, data_len),
-        4 => wire__crate__api__uft__connect_impl(port, ptr, rust_vec_len, data_len),
-        5 => wire__crate__api__direct__host_wifi_impl(port, ptr, rust_vec_len, data_len),
-        6 => wire__crate__api__uft__init_impl(port, ptr, rust_vec_len, data_len),
-        7 => wire__crate__api__uft__init_app_impl(port, ptr, rust_vec_len, data_len),
-        8 => wire__crate__api__direct__join_wifi_impl(port, ptr, rust_vec_len, data_len),
-        9 => wire__crate__api__direct__leave_wifi_impl(port, ptr, rust_vec_len, data_len),
-        11 => wire__crate__api__uft__receive_impl(port, ptr, rust_vec_len, data_len),
-        12 => wire__crate__api__uft__scan_impl(port, ptr, rust_vec_len, data_len),
-        13 => wire__crate__api__uft__send_files_impl(port, ptr, rust_vec_len, data_len),
-        14 => wire__crate__api__direct__stop_host_impl(port, ptr, rust_vec_len, data_len),
+        5 => wire__crate__api__uft__connect_impl(port, ptr, rust_vec_len, data_len),
+        7 => wire__crate__api__direct__host_wifi_impl(port, ptr, rust_vec_len, data_len),
+        8 => wire__crate__api__uft__init_impl(port, ptr, rust_vec_len, data_len),
+        9 => wire__crate__api__uft__init_app_impl(port, ptr, rust_vec_len, data_len),
+        10 => wire__crate__api__direct__join_wifi_impl(port, ptr, rust_vec_len, data_len),
+        11 => wire__crate__api__direct__leave_wifi_impl(port, ptr, rust_vec_len, data_len),
+        13 => wire__crate__api__uft__receive_impl(port, ptr, rust_vec_len, data_len),
+        14 => wire__crate__api__uft__scan_impl(port, ptr, rust_vec_len, data_len),
+        15 => wire__crate__api__uft__send_files_impl(port, ptr, rust_vec_len, data_len),
+        17 => wire__crate__api__direct__stop_host_impl(port, ptr, rust_vec_len, data_len),
         _ => unreachable!(),
     }
 }
@@ -942,7 +1072,10 @@ fn pde_ffi_dispatcher_sync_impl(
     // Codec=Pde (Serialization + dispatch), see doc to use other codecs
     match func_id {
         1 => wire__crate__api__uft__answer_impl(ptr, rust_vec_len, data_len),
-        10 => wire__crate__api__uft__my_links_impl(ptr, rust_vec_len, data_len),
+        4 => wire__crate__api__uft__cancel_impl(ptr, rust_vec_len, data_len),
+        6 => wire__crate__api__uft__diagnose_impl(ptr, rust_vec_len, data_len),
+        12 => wire__crate__api__uft__my_links_impl(ptr, rust_vec_len, data_len),
+        16 => wire__crate__api__uft__set_link_impl(ptr, rust_vec_len, data_len),
         _ => unreachable!(),
     }
 }
@@ -1111,8 +1244,11 @@ impl flutter_rust_bridge::IntoDart for crate::api::uft::Outgoing {
                 peak.into_into_dart().into_dart(),
             ]
             .into_dart(),
-            crate::api::uft::Outgoing::Failed { error } => {
+            crate::api::uft::Outgoing::Reconnecting { error } => {
                 [2.into_dart(), error.into_into_dart().into_dart()].into_dart()
+            }
+            crate::api::uft::Outgoing::Failed { error } => {
+                [3.into_dart(), error.into_into_dart().into_dart()].into_dart()
             }
             _ => {
                 unimplemented!("");
@@ -1135,6 +1271,8 @@ impl flutter_rust_bridge::IntoDart for crate::api::uft::Peer {
             self.fingerprint.into_into_dart().into_dart(),
             self.addr.into_into_dart().into_dart(),
             self.code.into_into_dart().into_dart(),
+            self.link.into_into_dart().into_dart(),
+            self.expected.into_into_dart().into_dart(),
         ]
         .into_dart()
     }
@@ -1261,6 +1399,13 @@ impl SseEncode for f64 {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
         serializer.cursor.write_f64::<NativeEndian>(self).unwrap();
+    }
+}
+
+impl SseEncode for i32 {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        serializer.cursor.write_i32::<NativeEndian>(self).unwrap();
     }
 }
 
@@ -1411,6 +1556,26 @@ impl SseEncode for Option<f64> {
     }
 }
 
+impl SseEncode for Option<i32> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <bool>::sse_encode(self.is_some(), serializer);
+        if let Some(value) = self {
+            <i32>::sse_encode(value, serializer);
+        }
+    }
+}
+
+impl SseEncode for Option<u32> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <bool>::sse_encode(self.is_some(), serializer);
+        if let Some(value) = self {
+            <u32>::sse_encode(value, serializer);
+        }
+    }
+}
+
 impl SseEncode for crate::api::uft::Outgoing {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
@@ -1445,8 +1610,12 @@ impl SseEncode for crate::api::uft::Outgoing {
                 <f64>::sse_encode(avg, serializer);
                 <f64>::sse_encode(peak, serializer);
             }
-            crate::api::uft::Outgoing::Failed { error } => {
+            crate::api::uft::Outgoing::Reconnecting { error } => {
                 <i32>::sse_encode(2, serializer);
+                <String>::sse_encode(error, serializer);
+            }
+            crate::api::uft::Outgoing::Failed { error } => {
+                <i32>::sse_encode(3, serializer);
                 <String>::sse_encode(error, serializer);
             }
             _ => {
@@ -1464,6 +1633,8 @@ impl SseEncode for crate::api::uft::Peer {
         <String>::sse_encode(self.fingerprint, serializer);
         <String>::sse_encode(self.addr, serializer);
         <String>::sse_encode(self.code, serializer);
+        <Option<String>>::sse_encode(self.link, serializer);
+        <Option<f64>>::sse_encode(self.expected, serializer);
     }
 }
 
@@ -1500,13 +1671,6 @@ impl SseEncode for crate::api::direct::Wifi {
         <String>::sse_encode(self.ssid, serializer);
         <String>::sse_encode(self.pass, serializer);
         <String>::sse_encode(self.sec, serializer);
-    }
-}
-
-impl SseEncode for i32 {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
-        serializer.cursor.write_i32::<NativeEndian>(self).unwrap();
     }
 }
 
