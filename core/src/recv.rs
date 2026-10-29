@@ -122,7 +122,13 @@ pub fn safe_rel_path(path: &str) -> Option<PathBuf> {
 fn windows_name(name: &str) -> String {
     let mut s: Vec<char> = name
         .chars()
-        .map(|c| if c < ' ' || "<>:\"|?*".contains(c) { '_' } else { c })
+        .map(|c| {
+            if c < ' ' || "<>:\"|?*".contains(c) {
+                '_'
+            } else {
+                c
+            }
+        })
         .collect();
     for c in s.iter_mut().rev() {
         if *c != '.' && *c != ' ' {
@@ -131,11 +137,18 @@ fn windows_name(name: &str) -> String {
         *c = '_';
     }
     let s: String = s.into_iter().collect();
-    let stem = s.split('.').next().unwrap_or("").trim_end().to_ascii_uppercase();
-    let device = matches!(stem.as_str(), "CON" | "PRN" | "AUX" | "NUL" | "CONIN$" | "CONOUT$")
-        || (stem.len() == 4
-            && (stem.starts_with("COM") || stem.starts_with("LPT"))
-            && stem.as_bytes()[3].is_ascii_digit())
+    let stem = s
+        .split('.')
+        .next()
+        .unwrap_or("")
+        .trim_end()
+        .to_ascii_uppercase();
+    let device = matches!(
+        stem.as_str(),
+        "CON" | "PRN" | "AUX" | "NUL" | "CONIN$" | "CONOUT$"
+    ) || (stem.len() == 4
+        && (stem.starts_with("COM") || stem.starts_with("LPT"))
+        && stem.as_bytes()[3].is_ascii_digit())
         || ["COM", "LPT"].iter().any(|p| {
             stem.strip_prefix(p)
                 .is_some_and(|d| matches!(d, "¹" | "²" | "³"))

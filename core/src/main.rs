@@ -262,7 +262,11 @@ fn with_port(host: &str) -> String {
 fn config() -> Res<PathBuf> {
     Ok(config_dir(
         std::env::var_os("UFT_HOME"),
-        std::env::var_os(if cfg!(windows) { "APPDATA" } else { "XDG_CONFIG_HOME" }),
+        std::env::var_os(if cfg!(windows) {
+            "APPDATA"
+        } else {
+            "XDG_CONFIG_HOME"
+        }),
         std::env::var_os("HOME"),
     )
     .ok_or("no config dir: set UFT_HOME or HOME")?)
