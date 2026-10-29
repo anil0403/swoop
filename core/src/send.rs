@@ -546,6 +546,8 @@ mod tests {
         fs::write(d.join("b.txt"), "bb").unwrap();
         fs::write(d.join("a.txt"), "").unwrap();
         fs::write(d.join("sub/c"), "ccc").unwrap();
+        // Windows only lets admins (or Developer Mode) make symlinks.
+        #[cfg(unix)]
         std::os::unix::fs::symlink(d.join("b.txt"), d.join("link")).unwrap();
         fs::create_dir_all(d.join("empty")).unwrap();
         fs::create_dir_all(d.join("nest/deeper")).unwrap();
@@ -581,6 +583,7 @@ mod tests {
         fs::remove_dir_all(root).unwrap();
     }
 
+    #[cfg(unix)]
     #[test]
     fn named_file_from_fd_path() {
         let path = std::env::temp_dir().join(format!("uft-fd-{}", proto::random_u64()));
