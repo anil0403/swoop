@@ -6,7 +6,7 @@ use std::collections::HashMap;
 use std::net::{Ipv4Addr, SocketAddr, TcpListener, UdpSocket};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicI64, Ordering};
-use std::sync::mpsc::{channel, Sender};
+use std::sync::mpsc::{channel, RecvTimeoutError, Sender};
 use std::sync::{Arc, LazyLock, Mutex, OnceLock};
 use std::thread;
 use std::time::{Duration, Instant};
@@ -27,12 +27,16 @@ struct State {
     fp: String,
     name: String,
     trust: Mutex<Trust>,
+    /// Receivers the user checked the pairing code of, in `config_dir/known`.
+    known: Mutex<Trust>,
     offers: Mutex<HashMap<i64, Sender<(bool, bool)>>>,
     /// Offers the user accepted while the app runs, by device, file count and size: the same
     /// transfer resuming after a dropped connection isn't asked about again, a new one is.
     accepted: Mutex<HashMap<(String, usize, u64), Instant>>,
     /// Running sends by the app's id, for `cancel`.
     sends: Mutex<HashMap<i64, Arc<AtomicBool>>>,
+    /// Sends waiting for the user to check the code (`confirm_send`), by the app's id.
+    confirms: Mutex<HashMap<i64, Sender<bool>>>,
     /// This device's link and when it was read; Android's comes from the app (`set_link`).
     link: Mutex<(Option<Link>, Option<Instant>)>,
     /// Links other devices announced, by fingerprint, for `diagnose`.
@@ -79,14 +83,18 @@ pub fn init(config_dir: String, name: String) -> Result<Me, String> {
         let dir = PathBuf::from(config_dir);
         let id = Identity::load_or_create(&dir).map_err(|e| format!("identity: {e}"))?;
         let trust = Trust::load(&dir).map_err(|e| format!("trusted devices: {e}"))?;
+        let known =
+            Trust::load_file(dir.join("known")).map_err(|e| format!("known devices: {e}"))?;
         let _ = STATE.set(State {
             fp: id.fingerprint(),
             id: Arc::new(id),
             name,
             trust: Mutex::new(trust),
+            known: Mutex::new(known),
             offers: Mutex::new(HashMap::new()),
             accepted: Mutex::new(HashMap::new()),
             sends: Mutex::new(HashMap::new()),
+            confirms: Mutex::new(HashMap::new()),
             link: Mutex::new((None, None)),
             links: Mutex::new(HashMap::new()),
         });
@@ -109,10 +117,24 @@ pub struct Peer {
     pub link: Option<String>,
     /// Best case between the two links, bytes/s.
     pub expected: Option<f64>,
+    /// Sent to before (its code was checked) or trusted: sends go without asking.
+    pub known: bool,
+    /// Not known, but has the name of a device that is: maybe someone posing as it.
+    pub lookalike: bool,
+}
+
+fn known(st: &State, fp: &str) -> bool {
+    st.known.lock().unwrap().contains(fp) || st.trust.lock().unwrap().contains(fp)
 }
 
 fn peer(f: &Found) -> Peer {
+    let (known, lookalike) = STATE.get().map_or((false, false), |st| {
+        let k = known(st, &f.device.fp);
+        (k, !k && st.known.lock().unwrap().has_name(&f.device.name))
+    });
     Peer {
+        known,
+        lookalike,
         name: f.device.name.clone(),
         os: f.device.os.clone(),
         fingerprint: f.device.fp.clone(),
@@ -217,6 +239,9 @@ pub fn connect(target: String) -> Result<Peer, String> {
             addr: with_port(host)?.to_string(),
             link: None,
             expected: None,
+            // The fingerprint came from the receiver's own screen: no code to check.
+            known: true,
+            lookalike: false,
         });
     }
     let addr = with_port(target)?;
@@ -533,6 +558,11 @@ pub enum Outgoing {
     Code {
         code: String,
     },
+    /// First send to this receiver: nothing goes until the user saw `code` on both screens and
+    /// answered with `confirm_send`.
+    Confirm {
+        code: String,
+    },
     Progress {
         done: i64,
         total: i64,
@@ -607,6 +637,11 @@ fn start_send(
                     let _ = sink.add(Outgoing::Code { code: code.into() });
                 })
             }),
+            confirm: (!peer.known).then(|| -> send::Confirm {
+                let (sink, cancel) = (sink.clone(), cancel.clone());
+                let (fp, name) = (peer.fingerprint.clone(), peer.name.clone());
+                Box::new(move |code| confirm(st, id, code, &fp, &name, &cancel, &sink))
+            }),
         };
         let mut last_ok = Instant::now();
         let r = loop {
@@ -662,6 +697,57 @@ fn start_send(
         });
     });
     Ok(())
+}
+
+/// Waits for the user to check `code` before the first send to `fp`, then remembers it.
+fn confirm(
+    st: &State,
+    id: i64,
+    code: Option<&str>,
+    fp: &str,
+    name: &str,
+    cancel: &AtomicBool,
+    sink: &StreamSink<Outgoing>,
+) -> std::io::Result<()> {
+    use std::io::{Error, ErrorKind};
+    if known(st, fp) {
+        return Ok(());
+    }
+    let Some(code) = code else {
+        return Err(Error::new(
+            ErrorKind::PermissionDenied,
+            format!("{name}'s Swoop is too old to pair with; update it"),
+        ));
+    };
+    let (tx, rx) = channel();
+    st.confirms.lock().unwrap().insert(id, tx);
+    let _ = sink.add(Outgoing::Confirm { code: code.into() });
+    let deadline = Instant::now() + ANSWER_TIMEOUT;
+    let ok = loop {
+        match rx.recv_timeout(Duration::from_millis(200)) {
+            Ok(ok) => break ok,
+            Err(RecvTimeoutError::Timeout)
+                if !cancel.load(Ordering::Relaxed) && Instant::now() < deadline => {}
+            Err(_) => break false,
+        }
+    };
+    st.confirms.lock().unwrap().remove(&id);
+    if !ok {
+        return Err(Error::new(ErrorKind::Interrupted, "cancelled"));
+    }
+    let _ = st.known.lock().unwrap().add(fp, name);
+    Ok(())
+}
+
+/// The user's answer to `Outgoing::Confirm` for the send `id`.
+#[flutter_rust_bridge::frb(sync)]
+pub fn confirm_send(id: i64, ok: bool) {
+    if let Some(tx) = STATE
+        .get()
+        .and_then(|st| st.confirms.lock().unwrap().remove(&id))
+    {
+        let _ = tx.send(ok);
+    }
 }
 
 /// Stops the send `id`; the receiver keeps what arrived, so sending again resumes.

@@ -39,7 +39,7 @@ flutter_rust_bridge::frb_generated_boilerplate!(
     default_rust_auto_opaque = RustAutoOpaqueMoi,
 );
 pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_VERSION: &str = "2.13.0";
-pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = -608884717;
+pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = 1378473308;
 
 // Section: executor
 
@@ -179,6 +179,39 @@ fn wire__crate__api__uft__cancel_impl(
             transform_result_sse::<_, ()>((move || {
                 let output_ok = Ok::<_, ()>({
                     crate::api::uft::cancel(api_id);
+                })?;
+                std::result::Result::Ok(output_ok)
+            })())
+        },
+    )
+}
+fn wire__crate__api__uft__confirm_send_impl(
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync::<flutter_rust_bridge::for_generated::SseCodec, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "confirm_send",
+            port: None,
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Sync,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_id = <i64>::sse_decode(&mut deserializer);
+            let api_ok = <bool>::sse_decode(&mut deserializer);
+            deserializer.end();
+            transform_result_sse::<_, ()>((move || {
+                let output_ok = Ok::<_, ()>({
+                    crate::api::uft::confirm_send(api_id, api_ok);
                 })?;
                 std::result::Result::Ok(output_ok)
             })())
@@ -1002,6 +1035,10 @@ impl SseDecode for crate::api::uft::Outgoing {
                 return crate::api::uft::Outgoing::Code { code: var_code };
             }
             1 => {
+                let mut var_code = <String>::sse_decode(deserializer);
+                return crate::api::uft::Outgoing::Confirm { code: var_code };
+            }
+            2 => {
                 let mut var_done = <i64>::sse_decode(deserializer);
                 let mut var_total = <i64>::sse_decode(deserializer);
                 let mut var_speed = <f64>::sse_decode(deserializer);
@@ -1017,7 +1054,7 @@ impl SseDecode for crate::api::uft::Outgoing {
                     streams: var_streams,
                 };
             }
-            2 => {
+            3 => {
                 let mut var_bytes = <i64>::sse_decode(deserializer);
                 let mut var_resumed = <i64>::sse_decode(deserializer);
                 let mut var_secs = <f64>::sse_decode(deserializer);
@@ -1031,11 +1068,11 @@ impl SseDecode for crate::api::uft::Outgoing {
                     peak: var_peak,
                 };
             }
-            3 => {
+            4 => {
                 let mut var_error = <String>::sse_decode(deserializer);
                 return crate::api::uft::Outgoing::Reconnecting { error: var_error };
             }
-            4 => {
+            5 => {
                 let mut var_error = <String>::sse_decode(deserializer);
                 return crate::api::uft::Outgoing::Failed { error: var_error };
             }
@@ -1055,6 +1092,8 @@ impl SseDecode for crate::api::uft::Peer {
         let mut var_addr = <String>::sse_decode(deserializer);
         let mut var_link = <Option<String>>::sse_decode(deserializer);
         let mut var_expected = <Option<f64>>::sse_decode(deserializer);
+        let mut var_known = <bool>::sse_decode(deserializer);
+        let mut var_lookalike = <bool>::sse_decode(deserializer);
         return crate::api::uft::Peer {
             name: var_name,
             os: var_os,
@@ -1062,6 +1101,8 @@ impl SseDecode for crate::api::uft::Peer {
             addr: var_addr,
             link: var_link,
             expected: var_expected,
+            known: var_known,
+            lookalike: var_lookalike,
         };
     }
 }
@@ -1122,16 +1163,16 @@ fn pde_ffi_dispatcher_primary_impl(
     match func_id {
         2 => wire__crate__api__direct__ble_invite_impl(port, ptr, rust_vec_len, data_len),
         3 => wire__crate__api__direct__ble_start_impl(port, ptr, rust_vec_len, data_len),
-        5 => wire__crate__api__uft__connect_impl(port, ptr, rust_vec_len, data_len),
-        7 => wire__crate__api__direct__host_wifi_impl(port, ptr, rust_vec_len, data_len),
-        8 => wire__crate__api__uft__init_impl(port, ptr, rust_vec_len, data_len),
-        9 => wire__crate__api__uft__init_app_impl(port, ptr, rust_vec_len, data_len),
-        10 => wire__crate__api__direct__join_wifi_impl(port, ptr, rust_vec_len, data_len),
-        11 => wire__crate__api__direct__leave_wifi_impl(port, ptr, rust_vec_len, data_len),
-        13 => wire__crate__api__uft__receive_impl(port, ptr, rust_vec_len, data_len),
-        14 => wire__crate__api__uft__scan_impl(port, ptr, rust_vec_len, data_len),
-        15 => wire__crate__api__uft__send_files_impl(port, ptr, rust_vec_len, data_len),
-        19 => wire__crate__api__direct__stop_host_impl(port, ptr, rust_vec_len, data_len),
+        6 => wire__crate__api__uft__connect_impl(port, ptr, rust_vec_len, data_len),
+        8 => wire__crate__api__direct__host_wifi_impl(port, ptr, rust_vec_len, data_len),
+        9 => wire__crate__api__uft__init_impl(port, ptr, rust_vec_len, data_len),
+        10 => wire__crate__api__uft__init_app_impl(port, ptr, rust_vec_len, data_len),
+        11 => wire__crate__api__direct__join_wifi_impl(port, ptr, rust_vec_len, data_len),
+        12 => wire__crate__api__direct__leave_wifi_impl(port, ptr, rust_vec_len, data_len),
+        14 => wire__crate__api__uft__receive_impl(port, ptr, rust_vec_len, data_len),
+        15 => wire__crate__api__uft__scan_impl(port, ptr, rust_vec_len, data_len),
+        16 => wire__crate__api__uft__send_files_impl(port, ptr, rust_vec_len, data_len),
+        20 => wire__crate__api__direct__stop_host_impl(port, ptr, rust_vec_len, data_len),
         _ => unreachable!(),
     }
 }
@@ -1146,11 +1187,12 @@ fn pde_ffi_dispatcher_sync_impl(
     match func_id {
         1 => wire__crate__api__uft__answer_impl(ptr, rust_vec_len, data_len),
         4 => wire__crate__api__uft__cancel_impl(ptr, rust_vec_len, data_len),
-        6 => wire__crate__api__uft__diagnose_impl(ptr, rust_vec_len, data_len),
-        12 => wire__crate__api__uft__my_links_impl(ptr, rust_vec_len, data_len),
-        16 => wire__crate__api__uft__set_link_impl(ptr, rust_vec_len, data_len),
-        17 => wire__crate__api__uft__set_receiving_impl(ptr, rust_vec_len, data_len),
-        18 => wire__crate__api__uft__set_save_dir_impl(ptr, rust_vec_len, data_len),
+        5 => wire__crate__api__uft__confirm_send_impl(ptr, rust_vec_len, data_len),
+        7 => wire__crate__api__uft__diagnose_impl(ptr, rust_vec_len, data_len),
+        13 => wire__crate__api__uft__my_links_impl(ptr, rust_vec_len, data_len),
+        17 => wire__crate__api__uft__set_link_impl(ptr, rust_vec_len, data_len),
+        18 => wire__crate__api__uft__set_receiving_impl(ptr, rust_vec_len, data_len),
+        19 => wire__crate__api__uft__set_save_dir_impl(ptr, rust_vec_len, data_len),
         _ => unreachable!(),
     }
 }
@@ -1292,6 +1334,9 @@ impl flutter_rust_bridge::IntoDart for crate::api::uft::Outgoing {
             crate::api::uft::Outgoing::Code { code } => {
                 [0.into_dart(), code.into_into_dart().into_dart()].into_dart()
             }
+            crate::api::uft::Outgoing::Confirm { code } => {
+                [1.into_dart(), code.into_into_dart().into_dart()].into_dart()
+            }
             crate::api::uft::Outgoing::Progress {
                 done,
                 total,
@@ -1300,7 +1345,7 @@ impl flutter_rust_bridge::IntoDart for crate::api::uft::Outgoing {
                 eta,
                 streams,
             } => [
-                1.into_dart(),
+                2.into_dart(),
                 done.into_into_dart().into_dart(),
                 total.into_into_dart().into_dart(),
                 speed.into_into_dart().into_dart(),
@@ -1316,7 +1361,7 @@ impl flutter_rust_bridge::IntoDart for crate::api::uft::Outgoing {
                 avg,
                 peak,
             } => [
-                2.into_dart(),
+                3.into_dart(),
                 bytes.into_into_dart().into_dart(),
                 resumed.into_into_dart().into_dart(),
                 secs.into_into_dart().into_dart(),
@@ -1325,10 +1370,10 @@ impl flutter_rust_bridge::IntoDart for crate::api::uft::Outgoing {
             ]
             .into_dart(),
             crate::api::uft::Outgoing::Reconnecting { error } => {
-                [3.into_dart(), error.into_into_dart().into_dart()].into_dart()
+                [4.into_dart(), error.into_into_dart().into_dart()].into_dart()
             }
             crate::api::uft::Outgoing::Failed { error } => {
-                [4.into_dart(), error.into_into_dart().into_dart()].into_dart()
+                [5.into_dart(), error.into_into_dart().into_dart()].into_dart()
             }
             _ => {
                 unimplemented!("");
@@ -1352,6 +1397,8 @@ impl flutter_rust_bridge::IntoDart for crate::api::uft::Peer {
             self.addr.into_into_dart().into_dart(),
             self.link.into_into_dart().into_dart(),
             self.expected.into_into_dart().into_dart(),
+            self.known.into_into_dart().into_dart(),
+            self.lookalike.into_into_dart().into_dart(),
         ]
         .into_dart()
     }
@@ -1665,6 +1712,10 @@ impl SseEncode for crate::api::uft::Outgoing {
                 <i32>::sse_encode(0, serializer);
                 <String>::sse_encode(code, serializer);
             }
+            crate::api::uft::Outgoing::Confirm { code } => {
+                <i32>::sse_encode(1, serializer);
+                <String>::sse_encode(code, serializer);
+            }
             crate::api::uft::Outgoing::Progress {
                 done,
                 total,
@@ -1673,7 +1724,7 @@ impl SseEncode for crate::api::uft::Outgoing {
                 eta,
                 streams,
             } => {
-                <i32>::sse_encode(1, serializer);
+                <i32>::sse_encode(2, serializer);
                 <i64>::sse_encode(done, serializer);
                 <i64>::sse_encode(total, serializer);
                 <f64>::sse_encode(speed, serializer);
@@ -1688,7 +1739,7 @@ impl SseEncode for crate::api::uft::Outgoing {
                 avg,
                 peak,
             } => {
-                <i32>::sse_encode(2, serializer);
+                <i32>::sse_encode(3, serializer);
                 <i64>::sse_encode(bytes, serializer);
                 <i64>::sse_encode(resumed, serializer);
                 <f64>::sse_encode(secs, serializer);
@@ -1696,11 +1747,11 @@ impl SseEncode for crate::api::uft::Outgoing {
                 <f64>::sse_encode(peak, serializer);
             }
             crate::api::uft::Outgoing::Reconnecting { error } => {
-                <i32>::sse_encode(3, serializer);
+                <i32>::sse_encode(4, serializer);
                 <String>::sse_encode(error, serializer);
             }
             crate::api::uft::Outgoing::Failed { error } => {
-                <i32>::sse_encode(4, serializer);
+                <i32>::sse_encode(5, serializer);
                 <String>::sse_encode(error, serializer);
             }
             _ => {
@@ -1719,6 +1770,8 @@ impl SseEncode for crate::api::uft::Peer {
         <String>::sse_encode(self.addr, serializer);
         <Option<String>>::sse_encode(self.link, serializer);
         <Option<f64>>::sse_encode(self.expected, serializer);
+        <bool>::sse_encode(self.known, serializer);
+        <bool>::sse_encode(self.lookalike, serializer);
     }
 }
 

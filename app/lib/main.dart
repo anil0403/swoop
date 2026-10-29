@@ -440,6 +440,69 @@ class HomeState extends State<Home> {
     updateBusy();
   }
 
+  /// The pairing code, big, as both devices show it.
+  Widget codeBox(BuildContext context, String code) {
+    final theme = Theme.of(context);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.primaryContainer,
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Text(
+        code,
+        style: theme.textTheme.headlineMedium?.copyWith(
+          color: theme.colorScheme.onPrimaryContainer,
+          fontWeight: FontWeight.w600,
+          letterSpacing: 4,
+          fontFeatures: tabular,
+        ),
+      ),
+    );
+  }
+
+  /// First send to `p`: nothing goes until the user saw `code` on both screens.
+  Future<bool> checkCode(uft.Peer p, String code, void Function(Route<bool>) shown) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) {
+        if (ModalRoute.of<bool>(context) case final r?) shown(r);
+        final c = Theme.of(context).colorScheme;
+        return AlertDialog(
+          icon: Icon(
+            p.lookalike ? Icons.gpp_maybe_rounded : Icons.verified_user_outlined,
+            color: p.lookalike ? c.error : null,
+          ),
+          title: Text('First send to ${p.name}'),
+          scrollable: true,
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (p.lookalike) ...[
+                Text(
+                  "This isn't the ${p.name} you sent to before. Send only if its screen shows "
+                  'this code too.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(color: c.error, fontWeight: FontWeight.w600),
+                ),
+                const SizedBox(height: 16),
+              ],
+              Text('Check that ${p.name} shows the same code:', textAlign: TextAlign.center),
+              const SizedBox(height: 12),
+              codeBox(context, code),
+            ],
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
+            FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('Send')),
+          ],
+        );
+      },
+    );
+    return ok ?? false;
+  }
+
   Future<void> offer(uft.Incoming_Offer o) async {
     // The receiver stops waiting after 110 s; this dialog goes then too (just this one, if offers stack).
     Route<(bool, bool)>? route;
@@ -465,22 +528,7 @@ class HomeState extends State<Home> {
                 textAlign: TextAlign.center,
               ),
               const SizedBox(height: 12),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-                decoration: BoxDecoration(
-                  color: Theme.of(context).colorScheme.primaryContainer,
-                  borderRadius: BorderRadius.circular(16),
-                ),
-                child: Text(
-                  o.code,
-                  style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-                    color: Theme.of(context).colorScheme.onPrimaryContainer,
-                    fontWeight: FontWeight.w600,
-                    letterSpacing: 4,
-                    fontFeatures: tabular,
-                  ),
-                ),
-              ),
+              codeBox(context, o.code),
             ],
           ),
           actions: [
@@ -605,7 +653,11 @@ class HomeState extends State<Home> {
       ..sendId = _nextSend++;
     if (card == null) setState(() => transfers.insert(0, t));
     updateBusy();
+    final id = t.sendId!;
+    Route<bool>? asking;
     void end() {
+      // The send gave up waiting, or was cancelled: its question goes too.
+      if (asking case final r? when r.isActive) r.navigator?.removeRoute(r);
       setState(() => t.sendId = null);
       updateBusy();
       release(picks);
@@ -613,12 +665,19 @@ class HomeState extends State<Home> {
     }
 
     uft
-        .sendFiles(id: t.sendId!, peer: p, picks: picks)
+        .sendFiles(id: id, peer: p, picks: picks)
         .listen(
           (e) => setState(() {
             switch (e) {
               case uft.Outgoing_Code():
                 t.note = 'Code ${e.code} · waiting for ${p.name} to accept';
+              case uft.Outgoing_Confirm():
+                t.note = 'Check the code on both screens';
+                checkCode(
+                  p,
+                  e.code,
+                  (r) => asking = r,
+                ).then((ok) => uft.confirmSend(id: id, ok: ok));
               case uft.Outgoing_Progress():
                 t
                   ..note = null
@@ -859,6 +918,8 @@ class HomeState extends State<Home> {
           ValueKey('p${p.fingerprint}'),
           icon: p.os == 'android' ? Icons.phone_android : Icons.computer,
           name: p.name,
+          known: p.known,
+          warning: p.lookalike ? 'Not the ${p.name} you sent to before' : null,
           detail:
               '${p.addr}'
               '${p.link == null ? '' : '\n${p.link}'}'
@@ -1283,6 +1344,8 @@ class HomeState extends State<Home> {
     required String name,
     required String detail,
     required VoidCallback onTap,
+    bool known = false,
+    String? warning,
   }) {
     final c = Theme.of(context).colorScheme;
     return Appear(
@@ -1291,12 +1354,34 @@ class HomeState extends State<Home> {
         child: ListTile(
           contentPadding: const EdgeInsets.fromLTRB(16, 6, 12, 6),
           leading: CircleAvatar(
-            backgroundColor: c.secondaryContainer,
-            foregroundColor: c.onSecondaryContainer,
-            child: Icon(icon, size: 20),
+            backgroundColor: warning != null ? c.errorContainer : c.secondaryContainer,
+            foregroundColor: warning != null ? c.onErrorContainer : c.onSecondaryContainer,
+            child: Icon(warning != null ? Icons.gpp_maybe_rounded : icon, size: 20),
           ),
-          title: Text(name, maxLines: 1, overflow: TextOverflow.ellipsis),
-          subtitle: Text(detail),
+          title: Row(
+            children: [
+              Flexible(child: Text(name, maxLines: 1, overflow: TextOverflow.ellipsis)),
+              if (known) ...[
+                const SizedBox(width: 6),
+                Tooltip(
+                  message: 'Known device',
+                  child: Icon(Icons.verified_rounded, size: 16, color: c.primary),
+                ),
+              ],
+            ],
+          ),
+          subtitle: Text.rich(
+            TextSpan(
+              children: [
+                if (warning != null)
+                  TextSpan(
+                    text: '$warning\n',
+                    style: TextStyle(color: c.error, fontWeight: FontWeight.w600),
+                  ),
+                TextSpan(text: detail),
+              ],
+            ),
+          ),
           trailing: Icon(Icons.send_rounded, color: c.primary),
           onTap: onTap,
         ),

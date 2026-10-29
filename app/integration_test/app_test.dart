@@ -68,6 +68,17 @@ void main() {
       );
     }
     home.send(p, [Pick(path: file)]);
+    // A device not sent to before: its code is checked first.
+    await waitFor(
+      tester,
+      find.textContaining(RegExp(r'^(First send to|Sent )')),
+      secs: 120,
+      why: () => home.transfers,
+    );
+    if (find.textContaining('First send to').evaluate().isNotEmpty) {
+      expect(find.textContaining(RegExp(r'^\d{3} \d{3}$')), findsOneWidget);
+      await tester.tap(find.text('Send'));
+    }
     await waitFor(tester, find.textContaining('Sent '), secs: 120, why: () => home.transfers);
 
     // The peer sends back: offer dialog with the code, accept it.

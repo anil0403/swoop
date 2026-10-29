@@ -9,7 +9,7 @@ import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 import 'package:freezed_annotation/freezed_annotation.dart' hide protected;
 part 'uft.freezed.dart';
 
-// These functions are ignored because they are not marked as `pub`: `ask`, `dropped`, `find`, `incoming`, `into_sink`, `local_link`, `peer`, `start_receive`, `start_scan`, `start_send`, `state`, `to_app`
+// These functions are ignored because they are not marked as `pub`: `ask`, `confirm`, `dropped`, `find`, `incoming`, `into_sink`, `known`, `local_link`, `peer`, `start_receive`, `start_scan`, `start_send`, `state`, `to_app`
 // These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `State`
 // These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `clone`, `clone`, `clone`, `fmt`, `fmt`, `fmt`
 
@@ -60,6 +60,10 @@ Stream<Outgoing> sendFiles({
   required Peer peer,
   required List<Pick> picks,
 }) => RustLib.instance.api.crateApiUftSendFiles(id: id, peer: peer, picks: picks);
+
+/// The user's answer to `Outgoing::Confirm` for the send `id`.
+void confirmSend({required PlatformInt64 id, required bool ok}) =>
+    RustLib.instance.api.crateApiUftConfirmSend(id: id, ok: ok);
 
 /// Stops the send `id`; the receiver keeps what arrived, so sending again resumes.
 void cancel({required PlatformInt64 id}) => RustLib.instance.api.crateApiUftCancel(id: id);
@@ -128,6 +132,10 @@ sealed class Outgoing with _$Outgoing {
 
   /// Connected: the pairing code, shown while the receiver decides (if it asks).
   const factory Outgoing.code({required String code}) = Outgoing_Code;
+
+  /// First send to this receiver: nothing goes until the user saw `code` on both screens and
+  /// answered with `confirm_send`.
+  const factory Outgoing.confirm({required String code}) = Outgoing_Confirm;
   const factory Outgoing.progress({
     required PlatformInt64 done,
     required PlatformInt64 total,
@@ -163,6 +171,12 @@ class Peer {
   /// Best case between the two links, bytes/s.
   final double? expected;
 
+  /// Sent to before (its code was checked) or trusted: sends go without asking.
+  final bool known;
+
+  /// Not known, but has the name of a device that is: maybe someone posing as it.
+  final bool lookalike;
+
   const Peer({
     required this.name,
     required this.os,
@@ -170,6 +184,8 @@ class Peer {
     required this.addr,
     this.link,
     this.expected,
+    required this.known,
+    required this.lookalike,
   });
 
   @override
@@ -179,7 +195,9 @@ class Peer {
       fingerprint.hashCode ^
       addr.hashCode ^
       link.hashCode ^
-      expected.hashCode;
+      expected.hashCode ^
+      known.hashCode ^
+      lookalike.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -191,7 +209,9 @@ class Peer {
           fingerprint == other.fingerprint &&
           addr == other.addr &&
           link == other.link &&
-          expected == other.expected;
+          expected == other.expected &&
+          known == other.known &&
+          lookalike == other.lookalike;
 }
 
 /// A file or folder to send. `name` set = one file offered under that relative name

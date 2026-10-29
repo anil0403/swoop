@@ -7,8 +7,8 @@ T=$(mktemp -d); (cd ../core && cargo build --release -q) && cp ../core/target/re
 head -c 200M /dev/urandom > "$T/out.bin"; head -c 30M /dev/urandom > "$T/back.bin"
 mkdir -p "$T/inbox" "$T/xdg/config" "$T/dl"
 echo "XDG_DOWNLOAD_DIR=\"$T/dl\"" > "$T/xdg/config/user-dirs.dirs"
-sudo -n bash -s "$T" "$U" "$(cat /proc/sys/kernel/hostname)" <<'ROOT'
-T=$1 U=$2 ME=$3
+sudo -n bash -s "$T" "$U" <<'ROOT'
+T=$1 U=$2
 ip netns del peer 2>/dev/null || true
 ip netns add peer
 ip link add uft-host type veth peer name uft-peer netns peer
@@ -16,9 +16,10 @@ ip addr add 10.88.0.1/24 dev uft-host; ip link set uft-host up
 ip -n peer addr add 10.88.0.2/24 dev uft-peer; ip -n peer link set uft-peer up; ip -n peer link set lo up
 inpeer() { ip netns exec peer unshare --uts sh -c "echo peer-ns > /proc/sys/kernel/hostname; UFT_HOME=$T/peerhome exec $*"; }
 inpeer "$U recv --dir $T/inbox --yes" > "$T/recv.log" 2>&1 < /dev/null &
-# Once the app's file has arrived, send one back to the app by its name.
+# Once the app's file has arrived, send one back to the fingerprint the test wrote: a first send
+# by name needs someone to check the pairing code.
 ( while [ ! -f "$T/inbox/out.bin" ]; do sleep 0.5; done; sleep 2
-  inpeer "$U send $ME $T/back.bin" > "$T/send.log" 2>&1 ) > /dev/null 2>&1 &
+  inpeer "$U send 10.88.0.1 $(cat $(find $T/xdg -name e2e-fp)) $T/back.bin" > "$T/send.log" 2>&1 ) > /dev/null 2>&1 &
 ROOT
 cleanup() { sudo -n sh -c "ip netns pids peer | xargs -r kill; ip netns del peer; ip link del uft-host; pkill -f 'bash -s $T'; rm -rf $T" 2>/dev/null || true; }
 trap cleanup EXIT
