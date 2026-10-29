@@ -363,6 +363,8 @@ class HomeState extends State<Home> {
 
   /// Starts Bluetooth discovery, or retries it; a previous error stays shown until it works or fails again.
   void startBle() {
+    // No Bluetooth or hotspot code for Windows yet: only devices on the same network show up.
+    if (Platform.isWindows) return;
     direct.bleStart(
       me!.fingerprint.substring(0, 16),
       me!.name,
