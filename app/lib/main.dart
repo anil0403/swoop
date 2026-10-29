@@ -244,11 +244,7 @@ class HomeState extends State<Home> {
 
   Future<void> start() async {
     try {
-      // Windows: %APPDATA%\uft, the swoop CLI's.
-      final appData = Platform.isWindows ? Platform.environment['APPDATA'] : null;
-      final config = appData != null
-          ? Directory('$appData\\uft')
-          : await getApplicationSupportDirectory();
+      final config = await getApplicationSupportDirectory();
       final String d, name;
       if (Platform.isAndroid) {
         // Locks left by a transfer from before the app was reopened; one still running takes them again.
