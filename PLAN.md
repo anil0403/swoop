@@ -175,7 +175,7 @@ BLE contract (both platforms):
   (nmcli, iw, dnsmasq). Flathub later: needs a real app id, AppStream metainfo, a license and screenshots.
 - [ ] 7.7 AUR `uft-bin` (`packaging/aur/PKGBUILD`, builds with makepkg against v1.5.0): pushed by `release.yml` once the
   owner adds `AUR_SSH_PRIVATE_KEY` (VERSIONING.md).
-- [ ] 7.8 Owner: a license (the repo has none; the PKGBUILD says `unknown`), the app name and ids (`dev.uft.uft`
+- [ ] 7.8 Owner: license MIT ✅; the app name and ids (`dev.uft.uft`
   placeholder), the APK and AUR secrets. F-Droid later.
 
 ## Test matrix (each release)

@@ -39,6 +39,10 @@ curl -fsSL https://github.com/anil0403/ultra-fast-data-transfer/releases/latest/
 Check with `uft version`. A beta: use `releases/download/vX.Y.Z-beta.N` in place of `releases/latest/download`.
 Each release has `SHA256SUMS`.
 
+## License
+
+[MIT](LICENSE).
+
 ## Build
 
 Linux (Rust stable, cmake, clang):
