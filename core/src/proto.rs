@@ -32,8 +32,11 @@ pub const CHUNK_HEADER: usize = 4 + 8 + 32;
 pub const CHUNK_SIZE: u64 = 2 << 20;
 /// Largest chunk a receiver accepts.
 pub const MAX_CHUNK: u64 = 16 << 20;
-/// Largest JSON message (an offer for ~100k files fits).
-pub const MAX_MSG: usize = 64 << 20;
+/// Largest JSON message: an offer for `MAX_FILES` files with typical names fits, and parsing one
+/// stays within a few hundred MB on a phone.
+pub const MAX_MSG: usize = 32 << 20;
+/// Most files one offer may list.
+pub const MAX_FILES: usize = 250_000;
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub struct Caps {

@@ -11,7 +11,7 @@ use std::io::{self, BufRead, BufReader, Read, Write};
 use std::net::{TcpListener, TcpStream};
 use std::os::unix::fs::FileExt;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::mpsc::{Receiver, Sender, channel, sync_channel};
 use std::sync::{Arc, Mutex};
 use std::thread;
@@ -72,6 +72,8 @@ pub enum RecvEvent {
 const MIN_CHUNK: u64 = 64 << 10;
 /// ponytail: caps per-session chunk bookkeeping (1 byte/chunk, 64 MB); bitsets if offers need more.
 const MAX_CHUNKS: u64 = 1 << 26;
+/// Connections handled at once: a few senders' streams (8 each) and their control links.
+const MAX_CONNS: usize = 64;
 const POOL: usize = 5;
 
 /// Accepts connections forever, one thread per connection. Each offer goes to
@@ -137,10 +139,22 @@ where
     A: Fn(TcpStream) -> io::Result<(S, String)> + Send + Sync + 'static,
 {
     let accept = Arc::new(accept);
+    let live = Arc::new(AtomicUsize::new(0));
     for tcp in listener.incoming() {
-        let Ok(tcp) = tcp else { continue };
-        let (ctx, accept) = (ctx.clone(), accept.clone());
-        thread::spawn(move || {
+        let Ok(tcp) = tcp else {
+            // Out of descriptors and the like: don't spin.
+            thread::sleep(Duration::from_millis(50));
+            continue;
+        };
+        // A thread per connection, before TLS or any trust: capped, so a flood can't use them all up.
+        if live.load(Ordering::Relaxed) >= MAX_CONNS {
+            continue;
+        }
+        live.fetch_add(1, Ordering::Relaxed);
+        let (ctx, accept, slot) = (ctx.clone(), accept.clone(), Slot(live.clone()));
+        // Builder, not thread::spawn: no thread left is a dropped connection, not a dead receiver.
+        let _ = thread::Builder::new().spawn(move || {
+            let _slot = slot;
             if let Ok((s, fp)) = accept(tcp) {
                 let _ = handle(s, fp, &ctx);
             }
@@ -156,14 +170,24 @@ fn send<W: Write>(w: &mut W, msg: &Msg) -> io::Result<()> {
     w.flush()
 }
 
+/// Frees a connection slot when its thread ends (or never starts: dropped with the closure).
+struct Slot(Arc<AtomicUsize>);
+
+impl Drop for Slot {
+    fn drop(&mut self) {
+        self.0.fetch_sub(1, Ordering::Relaxed);
+    }
+}
+
 fn handle<S: Read + Write>(mut s: S, peer_fp: String, ctx: &Ctx) -> io::Result<()> {
+    // Anyone can connect: the first message is small, so a stranger can't make us take in 32 MiB.
     let Msg::Hello {
         version,
         session,
         role,
         name,
         ..
-    } = proto::read_msg(&mut s)?
+    } = proto::read_msg(&mut (&mut s).take(64 << 10))?
     else {
         return Err(bad("expected hello"));
     };
@@ -497,8 +521,11 @@ fn plan(ctx: &Ctx, peer_fp: String, chunk_size: u64, files: &[FileEntry]) -> Res
     if !(MIN_CHUNK..=proto::MAX_CHUNK).contains(&chunk_size) {
         return Err(format!("chunk size {chunk_size} out of range"));
     }
-    if files.len() > u32::MAX as usize {
-        return Err("too many files".into());
+    if files.len() > proto::MAX_FILES {
+        return Err(format!(
+            "too many files (at most {} at a time)",
+            proto::MAX_FILES
+        ));
     }
     // Read once: a change of folder mid-offer doesn't split it.
     let dir = ctx.dir.lock().unwrap().clone();
