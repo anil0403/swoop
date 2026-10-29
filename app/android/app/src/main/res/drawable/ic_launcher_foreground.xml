@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- The mark from linux/io.github.anil0403.swoop.svg: its r=60 circle maps onto the 66dp safe zone (scale 0.55). -->
+<!-- The S from assets/logo.svg: its 120-unit tile maps onto the 66dp safe zone (scale 0.55). -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
     android:width="108dp"
     android:height="108dp"
     android:viewportWidth="108"
@@ -9,18 +10,20 @@
         android:scaleX="0.55"
         android:scaleY="0.55"
         android:translateX="18.8"
-        android:translateY="21.55">
+        android:translateY="21">
         <path
-            android:pathData="M26,48 C34,90 68,94 88,52 L92,44"
-            android:strokeColor="#FFFFFF"
-            android:strokeWidth="16"
+            android:pathData="M36,96 C64,104 92,94 88,74 C84,56 42,66 40,46 C38,30 60,24 80,28"
+            android:strokeWidth="14"
             android:strokeLineCap="round"
-            android:strokeLineJoin="round" />
+            android:strokeLineJoin="round">
+            <aapt:attr name="android:strokeColor"><gradient android:type="linear" android:startX="30" android:startY="104" android:endX="98" android:endY="20" android:startColor="#1D5FD1" android:endColor="#5AA2FF" /></aapt:attr>
+        </path>
         <path
-            android:pathData="M99,28 L105,59 L74,46 Z"
-            android:fillColor="#FFFFFF"
-            android:strokeColor="#FFFFFF"
-            android:strokeWidth="5"
-            android:strokeLineJoin="round" />
+            android:pathData="M97.6,31.5 L77.5,40.7 L82.5,15.3 Z"
+            android:strokeWidth="4"
+            android:strokeLineJoin="round">
+            <aapt:attr name="android:fillColor"><gradient android:type="linear" android:startX="30" android:startY="104" android:endX="98" android:endY="20" android:startColor="#1D5FD1" android:endColor="#5AA2FF" /></aapt:attr>
+            <aapt:attr name="android:strokeColor"><gradient android:type="linear" android:startX="30" android:startY="104" android:endX="98" android:endY="20" android:startColor="#1D5FD1" android:endColor="#5AA2FF" /></aapt:attr>
+        </path>
     </group>
 </vector>
