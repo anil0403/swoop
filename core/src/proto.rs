@@ -186,6 +186,17 @@ pub fn bad(msg: &str) -> io::Error {
     io::Error::new(io::ErrorKind::InvalidData, msg.to_string())
 }
 
+/// A socket timeout reads "Resource temporarily unavailable"; say what happened instead.
+pub fn stalled(e: io::Error) -> io::Error {
+    match e.kind() {
+        io::ErrorKind::WouldBlock | io::ErrorKind::TimedOut => io::Error::new(
+            io::ErrorKind::TimedOut,
+            "the other device stopped responding",
+        ),
+        _ => e,
+    }
+}
+
 /// Random session id without a rand dependency (RandomState is randomly seeded).
 pub fn random_u64() -> u64 {
     let mut h = std::collections::hash_map::RandomState::new().build_hasher();

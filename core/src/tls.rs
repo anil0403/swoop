@@ -149,6 +149,8 @@ pub fn accept(mut tcp: TcpStream, cfg: Arc<ServerConfig>) -> io::Result<(TlsServ
 // No SO_SNDBUF/SO_RCVBUF: setting them disables Linux autotuning.
 fn prep(tcp: &TcpStream) -> io::Result<()> {
     tcp.set_read_timeout(Some(Duration::from_secs(30)))?;
+    // A stalled peer still answers TCP's window probes, so without this a write waits forever.
+    tcp.set_write_timeout(Some(Duration::from_secs(30)))?;
     tcp.set_nodelay(true)
 }
 

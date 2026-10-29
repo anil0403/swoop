@@ -726,6 +726,7 @@ fn control<S: Read + Write>(
         run(&mut s, ctx, id, &sess, now, resumed, total, start)
     });
     ctx.sessions.lock().unwrap().remove(&id);
+    let r = r.map_err(proto::stalled);
     if let Err(e) = &r {
         let error = e.to_string();
         sess.fail(error.clone());

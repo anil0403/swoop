@@ -12,9 +12,9 @@ use std::io::{self, BufWriter, Write};
 use std::net::{Shutdown, SocketAddr, TcpStream};
 use std::os::unix::fs::{FileExt, MetadataExt};
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::mpsc::{self, Receiver, SyncSender};
+use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -65,6 +65,17 @@ pub struct SendStats {
 /// Blocks until the receiver reports Done. `on_progress` gets receiver-acknowledged
 /// progress plus the current stream count, ~10×/s.
 pub fn send(
+    addr: SocketAddr,
+    id: &Identity,
+    server_fp: &str,
+    sources: &[Source],
+    opts: &SendOptions,
+    on_progress: impl FnMut(&Snapshot, u32),
+) -> io::Result<SendStats> {
+    session(addr, id, server_fp, sources, opts, on_progress).map_err(proto::stalled)
+}
+
+fn session(
     addr: SocketAddr,
     id: &Identity,
     server_fp: &str,
@@ -121,6 +132,7 @@ pub fn send(
         next: AtomicUsize::new(0),
         abort: AtomicBool::new(false),
         ctrl: ctrl.sock.try_clone()?,
+        data: Mutex::new(Vec::new()),
         cfg,
         addr,
         hello: hello(Role::Data),
@@ -152,7 +164,7 @@ pub fn send(
             match proto::read_msg(&mut ctrl) {
                 Ok(Msg::Progress { .. }) if cancelled() => {
                     job.abort.store(true, Ordering::SeqCst);
-                    let _ = job.ctrl.shutdown(std::net::Shutdown::Both);
+                    shut(&job);
                     break Err(io::Error::new(io::ErrorKind::Interrupted, "cancelled"));
                 }
                 Ok(Msg::Progress { done }) => {
@@ -187,6 +199,10 @@ pub fn send(
 
         // A stream that failed first set `abort` and shut the control socket; its error explains ours.
         let stream_failed = res.is_err() && job.abort.swap(true, Ordering::SeqCst);
+        if res.is_err() {
+            // Control link lost or timed out: streams stuck writing to a stalled receiver end too.
+            shut(&job);
+        }
         let streams = handles.len() as u32;
         let mut stream_err = None;
         for h in handles {
@@ -248,6 +264,8 @@ struct Job {
     abort: AtomicBool,
     /// Clone of the control socket, shut down to wake the control loop on abort.
     ctrl: TcpStream,
+    /// Clones of the data sockets, shut down on abort so no stream waits on a stalled receiver.
+    data: Mutex<Vec<TcpStream>>,
     cfg: Arc<ClientConfig>,
     addr: SocketAddr,
     hello: Msg,
@@ -259,14 +277,30 @@ type Chunk = (u32, u64, [u8; 32], Vec<u8>);
 fn stream(job: &Job) -> io::Result<()> {
     let res = run_stream(job);
     if res.is_err() && !job.abort.swap(true, Ordering::SeqCst) {
-        let _ = job.ctrl.shutdown(Shutdown::Both);
+        shut(job);
     }
     res
+}
+
+/// Wakes everything blocked on the network: the control loop and every stream.
+fn shut(job: &Job) {
+    let _ = job.ctrl.shutdown(Shutdown::Both);
+    for s in job.data.lock().unwrap().iter() {
+        let _ = s.shutdown(Shutdown::Both);
+    }
 }
 
 /// One data connection: a reader thread (disk + hash) feeding this thread (TLS writes).
 fn run_stream(job: &Job) -> io::Result<()> {
     let mut w = BufWriter::with_capacity(256 << 10, tls::connect(job.addr, job.cfg.clone())?);
+    {
+        let mut data = job.data.lock().unwrap();
+        data.push(w.get_ref().sock.try_clone()?);
+        // Aborted while connecting: shut() already ran, so it missed this one.
+        if job.abort.load(Ordering::SeqCst) {
+            return Err(io::Error::other("aborted"));
+        }
+    }
     proto::write_msg(&mut w, &job.hello)?;
     let (tx, rx) = mpsc::sync_channel::<Chunk>(2);
     let (pool_tx, pool_rx) = mpsc::channel();
@@ -585,6 +619,7 @@ mod tests {
             next: AtomicUsize::new(0),
             abort: AtomicBool::new(false),
             ctrl: TcpStream::connect(listener.local_addr().unwrap()).unwrap(),
+            data: Mutex::new(Vec::new()),
             cfg: Arc::new(
                 ClientConfig::builder()
                     .with_root_certificates(rustls::RootCertStore::empty())
