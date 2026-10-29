@@ -20,9 +20,13 @@
 //! `Accept.have[i]` lists chunk indices of file `i` the receiver already holds (resume).
 //! `Progress.done` counts bytes written, including resumed ones.
 
+use serde::de::{self, Deserializer, SeqAccess, Visitor};
 use serde::{Deserialize, Serialize};
+use std::fmt;
 use std::hash::{BuildHasher, Hasher};
 use std::io::{self, Read, Write};
+use std::marker::PhantomData;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 pub const KIND_MSG: u8 = 1;
 pub const KIND_CHUNK: u8 = 2;
@@ -37,6 +41,11 @@ pub const MAX_CHUNK: u64 = 16 << 20;
 pub const MAX_MSG: usize = 32 << 20;
 /// Most files one offer may list.
 pub const MAX_FILES: usize = 250_000;
+/// Messages bigger than this (large offers) share `BIG_BUDGET` bytes at a time, so a flood of
+/// them can't run a phone out of memory.
+const BIG_MSG: usize = 1 << 20;
+const BIG_BUDGET: usize = 2 * MAX_MSG;
+static BIG_IN_USE: AtomicUsize = AtomicUsize::new(0);
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub struct Caps {
@@ -79,10 +88,15 @@ pub enum Msg {
     },
     Offer {
         chunk_size: u64,
+        #[serde(deserialize_with = "bounded")]
         files: Vec<FileEntry>,
         /// Empty folders to create, relative paths like `files`. Optional on the wire, so
         /// receivers that predate it just skip them.
-        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        #[serde(
+            default,
+            skip_serializing_if = "Vec::is_empty",
+            deserialize_with = "bounded"
+        )]
         dirs: Vec<String>,
     },
     Accept {
@@ -149,6 +163,7 @@ pub fn read_frame<R: Read>(r: &mut R, buf: &mut Vec<u8>) -> io::Result<Frame> {
             if len > MAX_MSG {
                 return Err(bad("message too large"));
             }
+            let _big = (len > BIG_MSG).then(|| Big::take(len)).transpose()?;
             let mut body = vec![0; len];
             r.read_exact(&mut body)?;
             Ok(Frame::Msg(serde_json::from_slice(&body)?))
@@ -182,8 +197,68 @@ pub fn read_msg<R: Read>(r: &mut R) -> io::Result<Msg> {
     }
 }
 
+/// A share of `BIG_BUDGET`, given back when dropped.
+struct Big(usize);
+
+impl Big {
+    fn take(n: usize) -> io::Result<Big> {
+        if BIG_IN_USE.fetch_add(n, Ordering::SeqCst) + n > BIG_BUDGET {
+            BIG_IN_USE.fetch_sub(n, Ordering::SeqCst);
+            return Err(io::Error::other("busy with other large offers, try again"));
+        }
+        Ok(Big(n))
+    }
+}
+
+impl Drop for Big {
+    fn drop(&mut self) {
+        BIG_IN_USE.fetch_sub(self.0, Ordering::SeqCst);
+    }
+}
+
+/// A list of at most `MAX_FILES`, refused while parsing: a 32 MiB message of tiny entries
+/// would otherwise take over a GB before the count is checked.
+fn bounded<'de, D: Deserializer<'de>, T: Deserialize<'de>>(d: D) -> Result<Vec<T>, D::Error> {
+    struct Bounded<T>(PhantomData<T>);
+    impl<'de, T: Deserialize<'de>> Visitor<'de> for Bounded<T> {
+        type Value = Vec<T>;
+        fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result {
+            write!(f, "a list of at most {MAX_FILES}")
+        }
+        fn visit_seq<A: SeqAccess<'de>>(self, mut seq: A) -> Result<Vec<T>, A::Error> {
+            let mut v = Vec::new();
+            while let Some(x) = seq.next_element()? {
+                if v.len() == MAX_FILES {
+                    return Err(de::Error::custom(format!(
+                        "too many files (at most {MAX_FILES} at a time)"
+                    )));
+                }
+                v.push(x);
+            }
+            Ok(v)
+        }
+    }
+    d.deserialize_seq(Bounded(PhantomData))
+}
+
 pub fn bad(msg: &str) -> io::Error {
     io::Error::new(io::ErrorKind::InvalidData, msg.to_string())
+}
+
+/// A peer's device name, safe to show next to a pairing code: one line, no control or bidi
+/// characters that could hide or reorder text (on screen or in a terminal), at most 64 chars.
+pub fn clean_name(name: &str) -> String {
+    let bidi = |c: char| matches!(c, '\u{200e}' | '\u{200f}' | '\u{061c}' | '\u{202a}'..='\u{202e}' | '\u{2066}'..='\u{2069}');
+    let s: String = name
+        .chars()
+        .map(|c| if c.is_whitespace() { ' ' } else { c })
+        .filter(|&c| !c.is_control() && !bidi(c))
+        .take(64)
+        .collect();
+    match s.trim() {
+        "" => "unknown device".into(),
+        t => t.into(),
+    }
 }
 
 /// A socket timeout reads "Resource temporarily unavailable"; say what happened instead.
@@ -251,5 +326,23 @@ mod tests {
         write_chunk(&mut short, 0, 0, &[0; 32], b"abc").unwrap();
         short.pop();
         assert!(read_frame(&mut Cursor::new(short), &mut Vec::new()).is_err());
+    }
+
+    #[test]
+    fn offer_lists_are_capped_while_parsing() {
+        let dirs = vec!["\"a\""; MAX_FILES + 1].join(",");
+        let json = format!(r#"{{"type":"offer","chunk_size":65536,"files":[],"dirs":[{dirs}]}}"#);
+        let err = serde_json::from_str::<Msg>(&json).unwrap_err();
+        assert!(err.to_string().contains("too many files"));
+    }
+
+    #[test]
+    fn names_are_one_safe_line() {
+        assert_eq!(
+            clean_name("Bob\n\ncode 123\u{1b}[8m\u{202e}x"),
+            "Bob  code 123[8mx"
+        );
+        assert_eq!(clean_name(&"a".repeat(500)).len(), 64);
+        assert_eq!(clean_name(" \u{202e} "), "unknown device");
     }
 }

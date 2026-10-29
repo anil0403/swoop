@@ -8,10 +8,10 @@ use std::collections::{HashMap, HashSet};
 use std::ffi::OsString;
 use std::fs::{self, File, OpenOptions};
 use std::io::{self, BufRead, BufReader, Read, Write};
-use std::net::{TcpListener, TcpStream};
+use std::net::{IpAddr, Ipv4Addr, TcpListener, TcpStream};
 use std::os::unix::fs::FileExt;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::mpsc::{Receiver, Sender, channel, sync_channel};
 use std::sync::{Arc, Mutex};
 use std::thread;
@@ -74,6 +74,8 @@ const MIN_CHUNK: u64 = 64 << 10;
 const MAX_CHUNKS: u64 = 1 << 26;
 /// Connections handled at once: a few senders' streams (8 each) and their control links.
 const MAX_CONNS: usize = 64;
+/// From one address: two transfers' worth, so one machine can't take every slot.
+const MAX_CONNS_PER_IP: usize = 20;
 const POOL: usize = 5;
 
 /// Accepts connections forever, one thread per connection. Each offer goes to
@@ -139,7 +141,7 @@ where
     A: Fn(TcpStream) -> io::Result<(S, String)> + Send + Sync + 'static,
 {
     let accept = Arc::new(accept);
-    let live = Arc::new(AtomicUsize::new(0));
+    let live: Live = Arc::default();
     for tcp in listener.incoming() {
         let Ok(tcp) = tcp else {
             // Out of descriptors and the like: don't spin.
@@ -147,11 +149,17 @@ where
             continue;
         };
         // A thread per connection, before TLS or any trust: capped, so a flood can't use them all up.
-        if live.load(Ordering::Relaxed) >= MAX_CONNS {
-            continue;
+        let ip = tcp
+            .peer_addr()
+            .map_or(IpAddr::V4(Ipv4Addr::UNSPECIFIED), |a| a.ip());
+        {
+            let mut m = live.lock().unwrap();
+            if m.values().sum::<usize>() >= MAX_CONNS || m.get(&ip) >= Some(&MAX_CONNS_PER_IP) {
+                continue;
+            }
+            *m.entry(ip).or_default() += 1;
         }
-        live.fetch_add(1, Ordering::Relaxed);
-        let (ctx, accept, slot) = (ctx.clone(), accept.clone(), Slot(live.clone()));
+        let (ctx, accept, slot) = (ctx.clone(), accept.clone(), Slot(live.clone(), ip));
         // Builder, not thread::spawn: no thread left is a dropped connection, not a dead receiver.
         let _ = thread::Builder::new().spawn(move || {
             let _slot = slot;
@@ -170,12 +178,21 @@ fn send<W: Write>(w: &mut W, msg: &Msg) -> io::Result<()> {
     w.flush()
 }
 
+/// Connections being handled, by address.
+type Live = Arc<Mutex<HashMap<IpAddr, usize>>>;
+
 /// Frees a connection slot when its thread ends (or never starts: dropped with the closure).
-struct Slot(Arc<AtomicUsize>);
+struct Slot(Live, IpAddr);
 
 impl Drop for Slot {
     fn drop(&mut self) {
-        self.0.fetch_sub(1, Ordering::Relaxed);
+        let mut m = self.0.lock().unwrap();
+        if let Some(n) = m.get_mut(&self.1) {
+            *n -= 1;
+            if *n == 0 {
+                m.remove(&self.1);
+            }
+        }
     }
 }
 
@@ -196,7 +213,7 @@ fn handle<S: Read + Write>(mut s: S, peer_fp: String, ctx: &Ctx) -> io::Result<(
         return send(&mut s, &Msg::Error { message });
     }
     match role {
-        Role::Control => control(s, ctx, session, peer_fp, name),
+        Role::Control => control(s, ctx, session, peer_fp, proto::clean_name(&name)),
         Role::Data => {
             let sess = ctx.sessions.lock().unwrap().get(&session).cloned();
             match sess {

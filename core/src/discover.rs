@@ -219,7 +219,8 @@ fn parse(b: &[u8]) -> Option<Device> {
                 && d.name.len() <= 255
                 && d.os.len() <= 32 =>
         {
-            Some(d)
+            let name = crate::proto::clean_name(&d.name);
+            Some(Device { name, ..d })
         }
         _ => None,
     }
