@@ -297,6 +297,8 @@ pub enum Incoming {
         files: i64,
         total: i64,
         resumed: i64,
+        /// The save folder its files go to.
+        folder: String,
     },
     Progress {
         session: i64,
@@ -395,6 +397,7 @@ fn incoming(ev: RecvEvent, meters: &Mutex<HashMap<u64, Meter>>) -> Incoming {
             files,
             total,
             resumed,
+            dir,
         } => {
             meters
                 .lock()
@@ -407,6 +410,7 @@ fn incoming(ev: RecvEvent, meters: &Mutex<HashMap<u64, Meter>>) -> Incoming {
                 files: files as i64,
                 total: total as i64,
                 resumed: resumed as i64,
+                folder: dir.to_string_lossy().into_owned(),
             }
         }
         RecvEvent::Progress {

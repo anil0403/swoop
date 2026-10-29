@@ -827,6 +827,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           files: dco_decode_i_64(raw[4]),
           total: dco_decode_i_64(raw[5]),
           resumed: dco_decode_i_64(raw[6]),
+          folder: dco_decode_String(raw[7]),
         );
       case 2:
         return Incoming_Progress(
@@ -1149,6 +1150,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         var var_files = sse_decode_i_64(deserializer);
         var var_total = sse_decode_i_64(deserializer);
         var var_resumed = sse_decode_i_64(deserializer);
+        var var_folder = sse_decode_String(deserializer);
         return Incoming_Started(
           session: var_session,
           peerName: var_peerName,
@@ -1156,6 +1158,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           files: var_files,
           total: var_total,
           resumed: var_resumed,
+          folder: var_folder,
         );
       case 2:
         var var_session = sse_decode_i_64(deserializer);
@@ -1561,6 +1564,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         files: final files,
         total: final total,
         resumed: final resumed,
+        folder: final folder,
       ):
         sse_encode_i_32(1, serializer);
         sse_encode_i_64(session, serializer);
@@ -1569,6 +1573,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         sse_encode_i_64(files, serializer);
         sse_encode_i_64(total, serializer);
         sse_encode_i_64(resumed, serializer);
+        sse_encode_String(folder, serializer);
       case Incoming_Progress(
         session: final session,
         done: final done,

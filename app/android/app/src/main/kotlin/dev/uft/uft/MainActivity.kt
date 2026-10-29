@@ -345,11 +345,6 @@ class MainActivity : FlutterActivity() {
         return listOf(path, name)
     }
 
-    /**
-     * A picked folder as a file path the Rust core can write to, or null when it has none (a provider
-     * other than the phone's storage). "primary:Download/X" → /storage/emulated/0/Download/X,
-     * "1234-ABCD:X" (SD card) → /storage/1234-ABCD/X.
-     */
     /** Shows the folder at [path] in the Files app, or the Downloads app where Files can't open a folder. */
     private fun openDir(path: String) {
         // Files on Android 8 (and maybe up to 10) crashes on a folder link, without telling us: seen on API 26, fine on 37.
@@ -372,6 +367,11 @@ class MainActivity : FlutterActivity() {
         }
     }
 
+    /**
+     * A picked folder as a file path the Rust core can write to, or null when it has none (a provider
+     * other than the phone's storage). "primary:Download/X" → /storage/emulated/0/Download/X,
+     * "1234-ABCD:X" (SD card) → /storage/1234-ABCD/X.
+     */
     private fun treePath(uri: Uri): String? {
         if (uri.authority != "com.android.externalstorage.documents") return null
         val id = DocumentsContract.getTreeDocumentId(uri)

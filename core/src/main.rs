@@ -575,6 +575,7 @@ fn print_event(ev: RecvEvent) {
             files,
             total,
             resumed,
+            ..
         } => {
             println!(
                 "[{session}] from {peer_name} ({peer_fp}): {files} files, {} (resumed {})",

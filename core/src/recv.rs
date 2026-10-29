@@ -50,6 +50,8 @@ pub enum RecvEvent {
         files: usize,
         total: u64,
         resumed: u64,
+        /// The save folder this one writes to (the one when it was offered).
+        dir: PathBuf,
     },
     Progress {
         session: u64,
@@ -629,14 +631,8 @@ fn control<S: Read + Write>(
     else {
         return Err(bad("expected offer"));
     };
-    let Some(dirs) = dirs
-        .iter()
-        .map(|d| safe_rel_path(d))
-        .collect::<Option<Vec<_>>>()
-    else {
-        let reason = "unsafe folder name in offer".into();
-        return send(&mut s, &Msg::Reject { reason });
-    };
+    // Ones with names that can't be made safely are skipped; they hold no files.
+    let dirs: Vec<_> = dirs.iter().filter_map(|d| safe_rel_path(d)).collect();
     let total = files.iter().map(|f| f.size).fold(0u64, u64::saturating_add);
     // Planned first: an offer that can't fit is refused without asking the user.
     let (sess, have, now) = match plan(ctx, peer_fp.clone(), chunk_size, &files) {
@@ -684,6 +680,7 @@ fn control<S: Read + Write>(
             files: files.len(),
             total,
             resumed,
+            dir: sess.dir.clone(),
         });
         if !sess.null_sink {
             for d in &dirs {
@@ -1020,12 +1017,13 @@ mod tests {
         assert!(!dir.join("big.bin.uftpart").exists());
         let ev = events(&rx);
         assert!(matches!(
-            ev[0],
+            &ev[0],
             RecvEvent::Started {
                 files: 3,
                 resumed: 0,
+                dir: d,
                 ..
-            }
+            } if *d == dir
         ));
         let total: u64 = files.iter().map(|f| f.data.len() as u64).sum();
         assert!(matches!(ev.last(), Some(RecvEvent::Done { bytes, .. }) if *bytes == total));

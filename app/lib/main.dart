@@ -384,8 +384,7 @@ class HomeState extends State<Home> {
                 sending: false,
               )
               ..done = e.resumed
-              // The save folder an offer starts with is the one it keeps.
-              ..folder = dir;
+              ..folder = e.folder;
         setState(() => transfers.insert(0, incoming[e.session] = t));
       case uft.Incoming_Progress():
         // One that started before the app was reopened (Android keeps it going when swiped away).
@@ -411,7 +410,10 @@ class HomeState extends State<Home> {
           });
           // Photos and videos show up in the Gallery.
           if (Platform.isAndroid) {
-            android.invokeMethod('scan', {'dir': dir, 'since': t.started.millisecondsSinceEpoch});
+            android.invokeMethod('scan', {
+              'dir': t.folder ?? dir,
+              'since': t.started.millisecondsSinceEpoch,
+            });
           }
         }
       case uft.Incoming_Failed():

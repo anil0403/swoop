@@ -838,6 +838,7 @@ impl SseDecode for crate::api::uft::Incoming {
                 let mut var_files = <i64>::sse_decode(deserializer);
                 let mut var_total = <i64>::sse_decode(deserializer);
                 let mut var_resumed = <i64>::sse_decode(deserializer);
+                let mut var_folder = <String>::sse_decode(deserializer);
                 return crate::api::uft::Incoming::Started {
                     session: var_session,
                     peer_name: var_peerName,
@@ -845,6 +846,7 @@ impl SseDecode for crate::api::uft::Incoming {
                     files: var_files,
                     total: var_total,
                     resumed: var_resumed,
+                    folder: var_folder,
                 };
             }
             2 => {
@@ -1209,6 +1211,7 @@ impl flutter_rust_bridge::IntoDart for crate::api::uft::Incoming {
                 files,
                 total,
                 resumed,
+                folder,
             } => [
                 1.into_dart(),
                 session.into_into_dart().into_dart(),
@@ -1217,6 +1220,7 @@ impl flutter_rust_bridge::IntoDart for crate::api::uft::Incoming {
                 files.into_into_dart().into_dart(),
                 total.into_into_dart().into_dart(),
                 resumed.into_into_dart().into_dart(),
+                folder.into_into_dart().into_dart(),
             ]
             .into_dart(),
             crate::api::uft::Incoming::Progress {
@@ -1514,6 +1518,7 @@ impl SseEncode for crate::api::uft::Incoming {
                 files,
                 total,
                 resumed,
+                folder,
             } => {
                 <i32>::sse_encode(1, serializer);
                 <i64>::sse_encode(session, serializer);
@@ -1522,6 +1527,7 @@ impl SseEncode for crate::api::uft::Incoming {
                 <i64>::sse_encode(files, serializer);
                 <i64>::sse_encode(total, serializer);
                 <i64>::sse_encode(resumed, serializer);
+                <String>::sse_encode(folder, serializer);
             }
             crate::api::uft::Incoming::Progress {
                 session,

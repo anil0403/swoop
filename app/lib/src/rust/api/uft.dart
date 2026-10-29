@@ -100,6 +100,9 @@ sealed class Incoming with _$Incoming {
     required PlatformInt64 files,
     required PlatformInt64 total,
     required PlatformInt64 resumed,
+
+    /// The save folder its files go to.
+    required String folder,
   }) = Incoming_Started;
   const factory Incoming.progress({
     required PlatformInt64 session,
