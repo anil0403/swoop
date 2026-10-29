@@ -123,6 +123,19 @@ pub struct Peer {
     pub lookalike: bool,
 }
 
+/// Forgets a device sent to or trusted: the next transfer either way checks its code again.
+#[flutter_rust_bridge::frb(sync)]
+pub fn forget(fingerprint: String) -> Result<(), String> {
+    let st = state()?;
+    for t in [&st.known, &st.trust] {
+        t.lock()
+            .unwrap()
+            .remove(&fingerprint)
+            .map_err(|e| format!("forget: {e}"))?;
+    }
+    Ok(())
+}
+
 fn known(st: &State, fp: &str) -> bool {
     st.known.lock().unwrap().contains(fp) || st.trust.lock().unwrap().contains(fp)
 }

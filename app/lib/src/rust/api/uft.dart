@@ -21,6 +21,10 @@ void setReceiving({required bool enabled}) =>
 Future<Me> init({required String configDir, required String name}) =>
     RustLib.instance.api.crateApiUftInit(configDir: configDir, name: name);
 
+/// Forgets a device sent to or trusted: the next transfer either way checks its code again.
+void forget({required String fingerprint}) =>
+    RustLib.instance.api.crateApiUftForget(fingerprint: fingerprint);
+
 /// Android's link, from the platform side (Rust can't read it there).
 void setLink({String? kind, int? mhz, int? mbps, int? dbm}) =>
     RustLib.instance.api.crateApiUftSetLink(kind: kind, mhz: mhz, mbps: mbps, dbm: dbm);

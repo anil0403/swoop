@@ -461,6 +461,47 @@ class HomeState extends State<Home> {
     );
   }
 
+  /// Asks, then forgets `p`: the next transfer either way checks its code again.
+  Future<void> forget(uft.Peer p) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        icon: const Icon(Icons.gpp_maybe_outlined),
+        title: Text('Forget ${p.name}?'),
+        content: const Text(
+          'The next time you send to it or it sends to you, both screens show a code to check again.',
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
+          FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('Forget')),
+        ],
+      ),
+    );
+    if (ok != true || !mounted) return;
+    try {
+      uft.forget(fingerprint: p.fingerprint);
+    } catch (e) {
+      setState(() => error = msg(e));
+      return;
+    }
+    // Shown as known until the next scan otherwise.
+    setState(() {
+      final i = peers.indexWhere((x) => x.fingerprint == p.fingerprint);
+      if (i >= 0) {
+        peers[i] = uft.Peer(
+          name: p.name,
+          os: p.os,
+          fingerprint: p.fingerprint,
+          addr: p.addr,
+          link: p.link,
+          expected: p.expected,
+          known: false,
+          lookalike: false,
+        );
+      }
+    });
+  }
+
   /// First send to `p`: nothing goes until the user saw `code` on both screens.
   Future<bool> checkCode(uft.Peer p, String code, void Function(Route<bool>) shown) async {
     final ok = await showDialog<bool>(
@@ -919,6 +960,7 @@ class HomeState extends State<Home> {
           icon: p.os == 'android' ? Icons.phone_android : Icons.computer,
           name: p.name,
           known: p.known,
+          onForget: () => forget(p),
           warning: p.lookalike ? 'Not the ${p.name} you sent to before' : null,
           detail:
               '${p.addr}'
@@ -1345,6 +1387,7 @@ class HomeState extends State<Home> {
     required String detail,
     required VoidCallback onTap,
     bool known = false,
+    VoidCallback? onForget,
     String? warning,
   }) {
     final c = Theme.of(context).colorScheme;
@@ -1361,13 +1404,18 @@ class HomeState extends State<Home> {
           title: Row(
             children: [
               Flexible(child: Text(name, maxLines: 1, overflow: TextOverflow.ellipsis)),
-              if (known) ...[
-                const SizedBox(width: 6),
-                Tooltip(
-                  message: 'Known device',
-                  child: Icon(Icons.verified_rounded, size: 16, color: c.primary),
+              if (known)
+                IconButton(
+                  icon: Icon(Icons.verified_rounded, size: 16, color: c.primary),
+                  tooltip: 'Known device · forget it',
+                  // Keeps the title line its height; long-pressing the row forgets too.
+                  style: IconButton.styleFrom(
+                    minimumSize: const Size(32, 24),
+                    padding: EdgeInsets.zero,
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  ),
+                  onPressed: onForget,
                 ),
-              ],
             ],
           ),
           subtitle: Text.rich(
@@ -1384,6 +1432,7 @@ class HomeState extends State<Home> {
           ),
           trailing: Icon(Icons.send_rounded, color: c.primary),
           onTap: onTap,
+          onLongPress: known ? onForget : null,
         ),
       ),
     );
