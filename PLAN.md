@@ -168,7 +168,8 @@ BLE contract (both platforms):
 ## Release tasks (Phase 7, see VERSIONING.md)
 - [x] 7.1 `release.yml`: on each `v*` tag, `uft` tarballs (Linux x86_64 + aarch64, Android aarch64) and `SHA256SUMS`; one-line install commands in README.
 - [x] 7.2 Flutter Linux app inside the Linux tarballs (`lib/uft/`, `bin/uft-app`, `share/applications/uft.desktop`), so the same one-liner installs it.
-- [ ] 7.3 Signed `uft-android.apk` on each release: built ✅; waits for the owner to add the keystore secrets (VERSIONING.md).
+- [ ] 7.3 `swoop-android.apk` on each release ✅, signed with a throwaway key until the owner adds the keystore secrets
+  (VERSIONING.md); an update across that key change needs an uninstall.
 - [x] 7.4 `version.yml`: automatic versions and tags from commit types (`next-version.sh`, tested in CI).
 - [x] 7.5 AppImage (x86_64 + aarch64) from the same files, with `appimagetool`.
 - [x] 7.6 Flatpak bundle (x86_64, `packaging/flatpak/dev.uft.uft.yml`, freedesktop 24.08). No direct link in the sandbox
@@ -178,6 +179,20 @@ BLE contract (both platforms):
 - [x] 7.8 License MIT; name Swoop (`swoop` command, app id `io.github.anil0403.swoop`). The crate, protocol strings,
   config dir and `.uftpart` files keep `uft` (internal; renaming them would break pairing and resume).
 - [ ] 7.9 Owner: the APK and AUR secrets. F-Droid later.
+
+## Phase 8 tasks: everyday polish
+- [x] 8.1 App icon: an SVG for Linux (desktop entry, window, packages), an adaptive icon with a monochrome layer for Android.
+- [x] 8.2 Share to Swoop (Android share sheet, one or many files), and drag and drop onto the Linux window; the files wait
+  in a banner for a device tap.
+- [x] 8.3 `swoop://` links: a QR code in Connect by address (Linux); the phone camera opens Swoop from it and adds the device.
+- [x] 8.4 Receive switch: offers are declined while it's off. The device still answers discovery.
+- [x] 8.5 Transfer progress in the Android notification; received photos and videos scanned into the Gallery (by ctime,
+  since files keep the sender's mtime).
+- [x] 8.6 A running transfer survives swiping the app away (the service and locks stay); the Flutter engine does not, so new
+  offers need the app reopened, and a direct-link transfer still ends.
+- [x] 8.7 UI: the icon's blue, light and dark; two columns on wide windows; status card, empty state, smooth progress,
+  Clear finished, drop overlay; start-up errors (a second copy holding the port) shown instead of thrown.
+- [ ] 8.8 On real phones: the share sheet, the camera link, the notification bar, the Gallery on Android 8–10, swipe-away.
 
 ## Test matrix (each release)
 4 pairings × {router Wi-Fi, one side wired, Android hotspot, Linux hotspot, isolated guest network, no network (BLE)} × hardware classes {budget Android, mid-range Android, flagship Android, Linux Intel Wi-Fi, Linux Realtek/MediaTek, Raspberry Pi 4/5, wired 1/2.5/10 GbE}.
