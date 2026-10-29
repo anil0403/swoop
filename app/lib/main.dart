@@ -145,6 +145,9 @@ class Transfer {
   /// A running send's id, for `uft.cancel`.
   int? sendId;
 
+  /// Stops it before bytes move (a direct link still being set up).
+  VoidCallback? cancel;
+
   /// Where a received one was saved.
   String? folder;
   final started = DateTime.now();
@@ -216,6 +219,9 @@ class HomeState extends State<Home> {
 
   /// Senders whose invite this device accepted: their offer needs no second tap.
   final invited = <String>{};
+
+  /// Bluetooth devices a direct send is going to; a second tap would take the first one's hotspot down.
+  final directing = <String>{};
 
   /// The sender this device joined a hotspot for, and its transfer; the network is left when it ends.
   String? joinedFor;
@@ -351,17 +357,23 @@ class HomeState extends State<Home> {
     return x;
   }
 
+  /// Starts Bluetooth discovery, or retries it; a previous error stays shown until it works or fails again.
   void startBle() {
-    bleError = null;
     direct.bleStart(
       me!.fingerprint.substring(0, 16),
       me!.name,
-      // Keeps the name when an advertisement comes without one.
-      seen: (b) => setState(
-        () => ble[b.fp] = b.name.isEmpty && ble[b.fp] != null ? (ble[b.fp]!..seen = b.seen) : b,
-      ),
+      seen: (b) {
+        final old = ble[b.fp];
+        // Keeps the name when an advertisement comes without one.
+        ble[b.fp] = b.name.isEmpty && old != null ? (old..seen = b.seen) : b;
+        // Advertisements come several times a second; only a new or renamed device changes the screen.
+        if (old == null || (b.name.isNotEmpty && b.name != old.name)) setState(() {});
+      },
       invite: onInvite,
       failed: (e) => setState(() => bleError = e),
+      started: () {
+        if (bleError != null) setState(() => bleError = null);
+      },
     );
   }
 
@@ -431,57 +443,66 @@ class HomeState extends State<Home> {
   }
 
   Future<void> offer(uft.Incoming_Offer o) async {
+    // The receiver stops waiting after 110 s; this dialog goes then too (just this one, if offers stack).
+    Route<(bool, bool)>? route;
+    final expire = Timer(const Duration(seconds: 110), () {
+      if (route case final r? when r.isActive) r.navigator?.removeRoute(r);
+    });
     final choice = await showDialog<(bool, bool)>(
       context: context,
       barrierDismissible: false,
-      builder: (context) => AlertDialog(
-        icon: const Icon(Icons.download_rounded),
-        title: Text('${o.peerName} wants to send you ${o.files} file${o.files == 1 ? '' : 's'}'),
-        scrollable: true,
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(size(o.total), style: Theme.of(context).textTheme.titleMedium),
-            const SizedBox(height: 24),
-            const Text(
-              'Check that the other device shows the same code:',
-              textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: 12),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-              decoration: BoxDecoration(
-                color: Theme.of(context).colorScheme.primaryContainer,
-                borderRadius: BorderRadius.circular(16),
+      builder: (context) {
+        route ??= ModalRoute.of<(bool, bool)>(context);
+        return AlertDialog(
+          icon: const Icon(Icons.download_rounded),
+          title: Text('${o.peerName} wants to send you ${o.files} file${o.files == 1 ? '' : 's'}'),
+          scrollable: true,
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(size(o.total), style: Theme.of(context).textTheme.titleMedium),
+              const SizedBox(height: 24),
+              const Text(
+                'Check that the other device shows the same code:',
+                textAlign: TextAlign.center,
               ),
-              child: Text(
-                o.code,
-                style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-                  color: Theme.of(context).colorScheme.onPrimaryContainer,
-                  fontWeight: FontWeight.w600,
-                  letterSpacing: 4,
-                  fontFeatures: tabular,
+              const SizedBox(height: 12),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                decoration: BoxDecoration(
+                  color: Theme.of(context).colorScheme.primaryContainer,
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                child: Text(
+                  o.code,
+                  style: Theme.of(context).textTheme.headlineMedium?.copyWith(
+                    color: Theme.of(context).colorScheme.onPrimaryContainer,
+                    fontWeight: FontWeight.w600,
+                    letterSpacing: 4,
+                    fontFeatures: tabular,
+                  ),
                 ),
               ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, (false, false)),
+              child: const Text('Decline'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.pop(context, (true, true)),
+              child: const Text('Always accept'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(context, (true, false)),
+              child: const Text('Accept'),
             ),
           ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, (false, false)),
-            child: const Text('Decline'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(context, (true, true)),
-            child: const Text('Always accept'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(context, (true, false)),
-            child: const Text('Accept'),
-          ),
-        ],
-      ),
+        );
+      },
     );
+    expire.cancel();
     final (accept, always) = choice ?? (false, false);
     uft.answer(id: o.id, accept: accept, always: always);
   }
@@ -633,21 +654,31 @@ class HomeState extends State<Home> {
   /// To a device seen only over Bluetooth: host a hotspot, invite it over Bluetooth, wait until it's on the hotspot,
   /// send, take the hotspot down.
   Future<void> sendDirect(direct.BlePeer b) async {
+    if (directing.contains(b.fp)) return;
     final picks = takePending() ?? await choose('Send to ${b.name} · direct Wi-Fi link');
-    if (picks.isEmpty) return;
-    final t = Transfer('To ${b.name} · ${describe(picks)}')..note = 'Starting a hotspot…';
+    if (picks.isEmpty || !directing.add(b.fp)) return;
+    var stop = false;
+    void check() {
+      if (stop) throw 'Cancelled';
+    }
+
+    final t = Transfer('To ${b.name} · ${describe(picks)}')
+      ..note = 'Starting a hotspot…'
+      ..cancel = () => stop = true;
     setState(() => transfers.insert(0, t));
     updateBusy();
     var hosting = false;
     try {
       final wifi = await direct.host();
       hosting = true;
+      check();
       // Linux peers may ask to pair first (BlueZ reads PipeWire's MIDI service on connect).
       setState(
         () => t.note =
             'Inviting ${b.name} over Bluetooth…${Platform.isLinux ? ' Accept a pairing request if one shows up.' : ''}',
       );
       await direct.bleInvite(b.id, direct.Invite(wifi, me!.fingerprint, me!.name).toJson());
+      check();
       setState(() => t.note = 'Waiting for ${b.name} to accept and join ${wifi.ssid}…');
       // The receiver taps once or twice (Android 10+ adds a system dialog), then joins; the scan finds it.
       final until = DateTime.now().add(const Duration(minutes: 2));
@@ -655,15 +686,27 @@ class HomeState extends State<Home> {
       while ((p = peers.where((x) => x.fingerprint.startsWith(b.fp)).firstOrNull) == null) {
         if (DateTime.now().isAfter(until)) throw '${b.name} did not join the hotspot';
         await Future<void>.delayed(const Duration(seconds: 1));
+        check();
       }
-      send(p!, picks, card: t, after: direct.stopHost);
+      t.cancel = null;
+      send(
+        p!,
+        picks,
+        card: t,
+        after: () {
+          direct.stopHost();
+          directing.remove(b.fp);
+        },
+      );
     } catch (e) {
       if (hosting) direct.stopHost();
+      directing.remove(b.fp);
       release(picks);
       setState(
         () => t
           ..failed = true
           ..note = null
+          ..cancel = null
           ..result = msg(e),
       );
       updateBusy();
@@ -913,19 +956,16 @@ class HomeState extends State<Home> {
       for (final t in transfers)
         Appear(
           key: ObjectKey(t),
-          // Finished ones swipe away either way; a running one has to be cancelled first.
-          child: t.result == null
-              ? TransferCard(t, open: t.folder == null ? null : () => openFolder(t.folder!))
-              : Dismissible(
-                  key: ObjectKey(t),
-                  background: swipeBg(theme, Alignment.centerLeft),
-                  secondaryBackground: swipeBg(theme, Alignment.centerRight),
-                  onDismissed: (_) => setState(() => transfers.remove(t)),
-                  child: TransferCard(
-                    t,
-                    open: t.folder == null ? null : () => openFolder(t.folder!),
-                  ),
-                ),
+          // Finished ones swipe away either way; a running one has to be cancelled first. Always a
+          // Dismissible, so the card isn't rebuilt from scratch (and its finish animation plays) when it ends.
+          child: Dismissible(
+            key: ObjectKey(t),
+            direction: t.result == null ? DismissDirection.none : DismissDirection.horizontal,
+            background: swipeBg(theme, Alignment.centerLeft),
+            secondaryBackground: swipeBg(theme, Alignment.centerRight),
+            onDismissed: (_) => setState(() => transfers.remove(t)),
+            child: TransferCard(t, open: t.folder == null ? null : () => openFolder(t.folder!)),
+          ),
         ),
     ];
     return AnnotatedRegion(
@@ -1219,8 +1259,8 @@ class HomeState extends State<Home> {
 
   Widget header(ThemeData theme, String text, {Widget? trailing, Widget? action}) => Padding(
     padding: const EdgeInsets.fromLTRB(4, 24, 0, 8),
-    child: SizedBox(
-      height: 32,
+    child: ConstrainedBox(
+      constraints: const BoxConstraints(minHeight: 32),
       child: Row(
         children: [
           Text(
@@ -1418,8 +1458,8 @@ class TransferCard extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            SizedBox(
-              height: 40,
+            ConstrainedBox(
+              constraints: const BoxConstraints(minHeight: 40),
               child: Row(
                 children: [
                   AnimatedSwitcher(
@@ -1447,9 +1487,9 @@ class TransferCard extends StatelessWidget {
                         ),
                       ),
                     ),
-                  if (running && t.sendId != null)
+                  if (running && (t.sendId != null || t.cancel != null))
                     TextButton(
-                      onPressed: () => uft.cancel(id: t.sendId!),
+                      onPressed: () => t.sendId != null ? uft.cancel(id: t.sendId!) : t.cancel!(),
                       child: const Text('Cancel'),
                     ),
                   if (!running && !t.failed && open != null)

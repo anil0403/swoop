@@ -53,13 +53,14 @@ class Invite {
 StreamSubscription<Object?>? _android;
 
 /// Advertises this device and reports others and incoming invites, until the app exits. Errors (Bluetooth off,
-/// no permission) go to `failed`; calling it again retries.
+/// no permission, the adapter going away) go to `failed`, success to `started`; calling it again retries.
 Future<void> bleStart(
   String fp,
   String name, {
   required void Function(BlePeer) seen,
   required void Function(String json) invite,
   required void Function(String error) failed,
+  required void Function() started,
 }) async {
   if (Platform.isAndroid) {
     _android ??= _events.receiveBroadcastStream().listen((e) {
@@ -68,10 +69,19 @@ Future<void> bleStart(
     });
     try {
       await _channel.invokeMethod('bleStart', {'fp': fp, 'name': name});
+      started();
     } on PlatformException catch (e) {
       failed(e.message ?? e.code);
     }
   } else {
+    // The stream says nothing on success: no error within a few seconds counts as started.
+    var ok = true;
+    void fail(String e) {
+      if (!ok) return;
+      ok = false;
+      failed(e);
+    }
+
     linux
         .bleStart(fp: fp, name: name)
         .listen(
@@ -79,8 +89,13 @@ Future<void> bleStart(
             linux.BleEvent_Seen() => seen(BlePeer(e.id, e.name, e.fp)),
             linux.BleEvent_Invite() => invite(e.json),
           },
-          onError: (Object e) => failed('$e'),
+          onError: (Object e) => fail('$e'),
+          // Ends when the adapter goes away (Bluetooth turned off); the app's retry starts it again.
+          onDone: () => fail('Bluetooth stopped'),
         );
+    Timer(const Duration(seconds: 3), () {
+      if (ok) started();
+    });
   }
 }
 
