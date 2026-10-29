@@ -34,9 +34,14 @@ class MainActivity : FlutterActivity() {
     private var wake: PowerManager.WakeLock? = null
     private var network: ConnectivityManager.NetworkCallback? = null
     private val direct by lazy { Direct(applicationContext, ::localBinding) }
+    private var channel: MethodChannel? = null
+    /** Files shared to Swoop that Dart hasn't fetched ("shared") yet. */
+    private val shared = mutableListOf<Uri>()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // Not on a recreate or a relaunch from recents: those re-deliver the intent that was already handled.
+        if (savedInstanceState == null && intent.flags and Intent.FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY == 0) stash(intent)
         val perms = mutableListOf<String>()
         if (Build.VERSION.SDK_INT <= 29) perms += Manifest.permission.WRITE_EXTERNAL_STORAGE
         if (Build.VERSION.SDK_INT >= 33) perms += Manifest.permission.POST_NOTIFICATIONS
@@ -77,8 +82,14 @@ class MainActivity : FlutterActivity() {
 
     override fun configureFlutterEngine(engine: FlutterEngine) {
         super.configureFlutterEngine(engine)
-        MethodChannel(engine.dartExecutor.binaryMessenger, "uft").setMethodCallHandler { call, result ->
+        MethodChannel(engine.dartExecutor.binaryMessenger, "uft").also { channel = it }.setMethodCallHandler { call, result ->
             when (call.method) {
+                "shared" -> {
+                    val uris = shared.toList()
+                    shared.clear()
+                    // One unreadable share shouldn't drop the rest.
+                    background(result) { uris.mapNotNull { runCatching { open(it, name(it)) }.getOrNull() } }
+                }
                 "info" -> result.success(
                     mapOf(
                         "name" to deviceName(),
@@ -218,13 +229,32 @@ class MainActivity : FlutterActivity() {
         val (result, folder) = picking ?: return
         picking = null
         if (resultCode != RESULT_OK || data == null) return result.success(emptyList<List<String>>())
-        // Off the UI thread: a big folder means many queries.
+        background(result) { if (folder) tree(data.data!!) else uris(data).map { open(it, name(it)) } }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        stash(intent)
+        channel?.invokeMethod("intent", null)
+    }
+
+    /** Keeps what a launching intent brings until Dart asks for it. */
+    @Suppress("DEPRECATION") // the typed getters are API 33+
+    private fun stash(i: Intent) {
+        when (i.action) {
+            Intent.ACTION_SEND -> i.getParcelableExtra<Uri>(Intent.EXTRA_STREAM)?.let { shared += it }
+            Intent.ACTION_SEND_MULTIPLE -> i.getParcelableArrayListExtra<Uri>(Intent.EXTRA_STREAM)?.let { shared += it }
+        }
+    }
+
+    /** Off the UI thread: a big folder or many shares means many queries. */
+    private fun background(result: MethodChannel.Result, work: () -> Any?) {
         Thread {
             try {
-                val out = if (folder) tree(data.data!!) else uris(data).map { open(it, name(it)) }
+                val out = work()
                 runOnUiThread { result.success(out) }
             } catch (e: Exception) {
-                runOnUiThread { result.error("pick", e.message, null) }
+                runOnUiThread { result.error("open", e.message, null) }
             }
         }.start()
     }
