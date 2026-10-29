@@ -12,7 +12,7 @@ use std::thread;
 use std::time::{Duration, Instant};
 use uft::discover::{self, Device, Found};
 use uft::link::{self, Link};
-use uft::pair::{self, Trust};
+use uft::pair::Trust;
 use uft::progress::Meter;
 use uft::recv::{self, Offer, RecvEvent, RecvOptions};
 use uft::send::{self, SendOptions, Source, Streams};
@@ -105,21 +105,18 @@ pub struct Peer {
     pub fingerprint: String,
     /// Best address to connect to.
     pub addr: String,
-    /// Pairing code both devices show.
-    pub code: String,
     /// Its network link, e.g. "Wi-Fi 5 GHz · 866 Mbps · -60 dBm", if it says.
     pub link: Option<String>,
     /// Best case between the two links, bytes/s.
     pub expected: Option<f64>,
 }
 
-fn peer(f: &Found, me: &str) -> Peer {
+fn peer(f: &Found) -> Peer {
     Peer {
         name: f.device.name.clone(),
         os: f.device.os.clone(),
         fingerprint: f.device.fp.clone(),
         addr: f.addrs[0].to_string(),
-        code: pair::code(me, &f.device.fp),
         link: f.device.link.as_ref().map(link::describe),
         expected: f
             .device
@@ -216,7 +213,6 @@ pub fn connect(target: String) -> Result<Peer, String> {
         return Ok(Peer {
             name: host.to_string(),
             os: String::new(),
-            code: pair::code(me, &fp),
             fingerprint: fp,
             addr: with_port(host)?.to_string(),
             link: None,
@@ -236,7 +232,7 @@ pub fn connect(target: String) -> Result<Peer, String> {
         .find(|f| f.device.fp != *me && f.addrs.iter().any(|a| a.ip() == addr.ip()))
         .map(|f| Peer {
             addr: addr.to_string(),
-            ..peer(f, me)
+            ..peer(f)
         })
         .ok_or_else(|| format!("no Swoop device answered at {addr}; is it receiving?"))
 }
@@ -265,7 +261,7 @@ fn start_scan(secs: u32, sink: StreamSink<Vec<Peer>>) -> Result<(), String> {
             if f.device.fp == me {
                 return false;
             }
-            let p = peer(f, &me);
+            let p = peer(f);
             match list.iter().position(|x| x.fingerprint == p.fingerprint) {
                 Some(i) => list[i] = p,
                 None if list.len() < MAX_PEERS => list.push(p),
@@ -476,6 +472,10 @@ fn ask(o: &Offer, sink: &StreamSink<Incoming>) -> bool {
     {
         return true;
     }
+    // A sender too old for per-connection codes can't be paired with safely.
+    let Some(code) = o.code.clone() else {
+        return false;
+    };
     let id = NEXT_OFFER.fetch_add(1, Ordering::Relaxed);
     let (tx, rx) = channel();
     {
@@ -493,7 +493,7 @@ fn ask(o: &Offer, sink: &StreamSink<Incoming>) -> bool {
             fingerprint: o.peer_fp.clone(),
             files: o.files as i64,
             total: o.total as i64,
-            code: pair::code(&st.fp, &o.peer_fp),
+            code,
         })
         .is_ok();
     let reply = if shown {
@@ -529,6 +529,10 @@ pub fn answer(id: i64, accept: bool, always: bool) {
 
 #[derive(Clone, Debug)]
 pub enum Outgoing {
+    /// Connected: the pairing code, shown while the receiver decides (if it asks).
+    Code {
+        code: String,
+    },
     Progress {
         done: i64,
         total: i64,
@@ -597,6 +601,12 @@ fn start_send(
             streams: Streams::Auto,
             name: st.name.clone(),
             cancel: Some(cancel.clone()),
+            on_code: Some({
+                let sink = sink.clone();
+                Box::new(move |code| {
+                    let _ = sink.add(Outgoing::Code { code: code.into() });
+                })
+            }),
         };
         let mut last_ok = Instant::now();
         let r = loop {

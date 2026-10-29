@@ -506,7 +506,7 @@ class HomeState extends State<Home> {
   }
 
   Future<void> pick(uft.Peer p) async {
-    final picks = takePending() ?? await choose('Send to ${p.name} · code ${p.code}');
+    final picks = takePending() ?? await choose('Send to ${p.name}');
     if (picks.isNotEmpty) send(p, picks);
   }
 
@@ -617,6 +617,8 @@ class HomeState extends State<Home> {
         .listen(
           (e) => setState(() {
             switch (e) {
+              case uft.Outgoing_Code():
+                t.note = 'Code ${e.code} · waiting for ${p.name} to accept';
               case uft.Outgoing_Progress():
                 t
                   ..note = null
@@ -858,7 +860,7 @@ class HomeState extends State<Home> {
           icon: p.os == 'android' ? Icons.phone_android : Icons.computer,
           name: p.name,
           detail:
-              '${p.addr} · code ${p.code}'
+              '${p.addr}'
               '${p.link == null ? '' : '\n${p.link}'}'
               '${p.expected == null ? '' : ' · up to ${speed(p.expected!)}'}',
           onTap: () => pick(p),

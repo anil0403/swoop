@@ -6,17 +6,42 @@ use std::io::{self, Write};
 use std::os::unix::fs::OpenOptionsExt;
 use std::path::{Path, PathBuf};
 
-/// 6-digit code like `"482 913"` from two cert fingerprints, the same in either order.
-pub fn code(a: &str, b: &str) -> String {
-    let (lo, hi) = if a <= b { (a, b) } else { (b, a) };
+/// 6-digit code like `"482 913"` for one connection, from both certs and a nonce from each side.
+///
+/// The sender commits to its nonce (`commit`, in Hello) before it sees the receiver's (Welcome)
+/// and reveals it after (Offer). So neither side, nor anyone in the middle, can pick keys or
+/// nonces that make two different connections show the same code: a man in the middle gets
+/// one guess in a million per prompt the user sees.
+pub fn code(
+    sender_fp: &str,
+    receiver_fp: &str,
+    sender_nonce: &str,
+    receiver_nonce: &str,
+) -> String {
     let mut h = blake3::Hasher::new();
-    h.update(b"uft pair\n");
-    h.update(lo.as_bytes());
-    h.update(b"\n");
-    h.update(hi.as_bytes());
+    h.update(b"swoop pair 2\n");
+    for part in [sender_fp, receiver_fp, sender_nonce, receiver_nonce] {
+        h.update(part.as_bytes());
+        h.update(b"\n");
+    }
     let bytes = h.finalize();
     let n = u64::from_le_bytes(bytes.as_bytes()[..8].try_into().unwrap()) % 1_000_000;
     format!("{:03} {:03}", n / 1000, n % 1000)
+}
+
+/// 256 random bits, hex: one side's share of a pairing code.
+pub fn nonce() -> io::Result<String> {
+    let mut b = [0u8; 32];
+    rustls::crypto::aws_lc_rs::default_provider()
+        .secure_random
+        .fill(&mut b)
+        .map_err(|_| io::Error::other("no secure random numbers"))?;
+    Ok(b.iter().map(|x| format!("{x:02x}")).collect())
+}
+
+/// What the sender sends first instead of its nonce.
+pub fn commit(nonce: &str) -> String {
+    blake3::hash(nonce.as_bytes()).to_hex().to_string()
 }
 
 /// Fingerprints of trusted devices, kept in `dir/trusted` as `FINGERPRINT NAME` lines.
@@ -84,11 +109,16 @@ mod tests {
     use std::os::unix::fs::PermissionsExt;
 
     #[test]
-    fn code_is_symmetric_six_digits() {
+    fn code_is_six_digits_per_connection() {
         let (a, b) = ("a".repeat(64), "b".repeat(64));
-        let c = code(&a, &b);
-        assert_eq!(c, code(&b, &a));
-        assert_ne!(c, code(&a, &"c".repeat(64)));
+        let (na, nb) = (nonce().unwrap(), nonce().unwrap());
+        assert_eq!(na.len(), 64);
+        assert_ne!(na, nb);
+        let c = code(&a, &b, &na, &nb);
+        assert_eq!(c, code(&a, &b, &na, &nb));
+        assert_ne!(c, code(&b, &a, &na, &nb));
+        assert_ne!(c, code(&a, &b, &na, &nonce().unwrap()));
+        assert_ne!(commit(&na), commit(&nb));
         let (x, y) = c.split_once(' ').unwrap();
         assert!(
             [x, y]

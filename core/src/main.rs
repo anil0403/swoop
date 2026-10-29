@@ -10,7 +10,7 @@ use std::time::{Duration, Instant};
 use uft::DEFAULT_PORT;
 use uft::discover::{self, Device, Found};
 use uft::link;
-use uft::pair::{self, Trust};
+use uft::pair::Trust;
 use uft::progress::Snapshot;
 use uft::recv::{self, Offer, RecvEvent, RecvOptions};
 use uft::send::{self, SendOptions, SendStats, Source, Streams};
@@ -302,12 +302,20 @@ fn resolve(device: &str, fp: Option<String>) -> Res<(SocketAddr, String, String)
 }
 
 /// Asks on the terminal whether to accept an offer from a device that isn't trusted yet.
-fn confirm(o: &Offer, me: &str, trust: &Mutex<Trust>) -> bool {
+fn confirm(o: &Offer, trust: &Mutex<Trust>) -> bool {
     // Holding the lock also keeps two prompts from mixing.
     let mut trust = trust.lock().unwrap();
     if trust.contains(&o.peer_fp) {
         return true;
     }
+    let Some(code) = &o.code else {
+        eprintln!(
+            "swoop: declined {} from {}: its Swoop is too old to pair with; update it",
+            human(o.total),
+            o.peer_name
+        );
+        return false;
+    };
     if !std::io::stdin().is_terminal() {
         eprintln!(
             "swoop: declined {} from {}: not trusted yet (confirm in a terminal, or use --yes)",
@@ -322,7 +330,7 @@ fn confirm(o: &Offer, me: &str, trust: &Mutex<Trust>) -> bool {
         o.peer_name,
         o.files,
         human(o.total),
-        pair::code(me, &o.peer_fp)
+        code
     );
     let mut line = String::new();
     let _ = std::io::stdin().read_line(&mut line);
@@ -465,8 +473,7 @@ fn run(cmd: Cmd) -> Res<()> {
                 None
             } else {
                 let trust = Mutex::new(Trust::load(&config()?)?);
-                let fp = fp.clone();
-                Some(Arc::new(move |o: &Offer| confirm(o, &fp, &trust)))
+                Some(Arc::new(move |o: &Offer| confirm(o, &trust)))
             };
             let opts = RecvOptions {
                 dir: Arc::new(Mutex::new(dir)),
@@ -506,10 +513,7 @@ fn run(cmd: Cmd) -> Res<()> {
         } => {
             let id = identity()?;
             let (addr, fp, name) = resolve(&device, fp)?;
-            eprintln!(
-                "to {name} at {addr}, pairing code {}",
-                pair::code(&id.fingerprint(), &fp)
-            );
+            eprintln!("to {name} at {addr}");
             let sources: Vec<Source> = match synthetic {
                 Some(size) => vec![Source::Synthetic {
                     name: "synthetic.bin".into(),
@@ -521,6 +525,9 @@ fn run(cmd: Cmd) -> Res<()> {
                 streams,
                 name: device_name(),
                 cancel: None,
+                on_code: Some(Box::new(|code| {
+                    eprintln!("pairing code {code} (the receiver shows it too if it asks)")
+                })),
             };
             let stats = send::send(addr, &id, &fp, &sources, &opts, print_status)?;
             eprintln!();
@@ -550,6 +557,7 @@ fn run(cmd: Cmd) -> Res<()> {
                 streams,
                 name: "bench-send".into(),
                 cancel: None,
+                on_code: None,
             };
             let s = send::send(addr, &tx, &rx_fp, &sources, &opts, print_status)?;
             eprintln!();

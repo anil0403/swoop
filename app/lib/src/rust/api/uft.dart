@@ -22,18 +22,13 @@ Future<Me> init({required String configDir, required String name}) =>
     RustLib.instance.api.crateApiUftInit(configDir: configDir, name: name);
 
 /// Android's link, from the platform side (Rust can't read it there).
-void setLink({String? kind, int? mhz, int? mbps, int? dbm}) => RustLib
-    .instance
-    .api
-    .crateApiUftSetLink(kind: kind, mhz: mhz, mbps: mbps, dbm: dbm);
+void setLink({String? kind, int? mhz, int? mbps, int? dbm}) =>
+    RustLib.instance.api.crateApiUftSetLink(kind: kind, mhz: mhz, mbps: mbps, dbm: dbm);
 
 /// "This device: … · Other device: … · up to N MB/s · tip", for the device with `fingerprint`
 /// after a transfer at `speed` bytes/s; None when neither link is known.
 String? diagnose({required String fingerprint, required double speed}) =>
-    RustLib.instance.api.crateApiUftDiagnose(
-      fingerprint: fingerprint,
-      speed: speed,
-    );
+    RustLib.instance.api.crateApiUftDiagnose(fingerprint: fingerprint, speed: speed);
 
 /// This device as `swoop://IP:PORT/FINGERPRINT`, one per local network: what to type on a device that can't find it.
 List<String> myLinks() => RustLib.instance.api.crateApiUftMyLinks();
@@ -44,27 +39,18 @@ Future<Peer> connect({required String target}) =>
     RustLib.instance.api.crateApiUftConnect(target: target);
 
 /// Scans for `secs`, sending the whole list of other devices each time it changes.
-Stream<List<Peer>> scan({required int secs}) =>
-    RustLib.instance.api.crateApiUftScan(secs: secs);
+Stream<List<Peer>> scan({required int secs}) => RustLib.instance.api.crateApiUftScan(secs: secs);
 
 /// Receives into `dir` and makes this device discoverable, until the app exits.
 Stream<Incoming> receive({required String dir}) =>
     RustLib.instance.api.crateApiUftReceive(dir: dir);
 
 /// Where received files go from the next offer on; a transfer already running keeps its folder.
-void setSaveDir({required String dir}) =>
-    RustLib.instance.api.crateApiUftSetSaveDir(dir: dir);
+void setSaveDir({required String dir}) => RustLib.instance.api.crateApiUftSetSaveDir(dir: dir);
 
 /// The user's answer to an `Incoming::Offer`; `always` also trusts the device from now on.
-void answer({
-  required PlatformInt64 id,
-  required bool accept,
-  required bool always,
-}) => RustLib.instance.api.crateApiUftAnswer(
-  id: id,
-  accept: accept,
-  always: always,
-);
+void answer({required PlatformInt64 id, required bool accept, required bool always}) =>
+    RustLib.instance.api.crateApiUftAnswer(id: id, accept: accept, always: always);
 
 /// Sends files and folders to `peer`; reports progress, then Done or Failed. `id` is the app's,
 /// for `cancel`. A dropped connection is retried for a while, on whichever path finds the
@@ -73,12 +59,10 @@ Stream<Outgoing> sendFiles({
   required PlatformInt64 id,
   required Peer peer,
   required List<Pick> picks,
-}) =>
-    RustLib.instance.api.crateApiUftSendFiles(id: id, peer: peer, picks: picks);
+}) => RustLib.instance.api.crateApiUftSendFiles(id: id, peer: peer, picks: picks);
 
 /// Stops the send `id`; the receiver keeps what arrived, so sending again resumes.
-void cancel({required PlatformInt64 id}) =>
-    RustLib.instance.api.crateApiUftCancel(id: id);
+void cancel({required PlatformInt64 id}) => RustLib.instance.api.crateApiUftCancel(id: id);
 
 @freezed
 sealed class Incoming with _$Incoming {
@@ -116,10 +100,8 @@ sealed class Incoming with _$Incoming {
     required PlatformInt64 bytes,
     required double secs,
   }) = Incoming_Done;
-  const factory Incoming.failed({
-    required PlatformInt64 session,
-    required String error,
-  }) = Incoming_Failed;
+  const factory Incoming.failed({required PlatformInt64 session, required String error}) =
+      Incoming_Failed;
 }
 
 class Me {
@@ -144,6 +126,8 @@ class Me {
 sealed class Outgoing with _$Outgoing {
   const Outgoing._();
 
+  /// Connected: the pairing code, shown while the receiver decides (if it asks).
+  const factory Outgoing.code({required String code}) = Outgoing_Code;
   const factory Outgoing.progress({
     required PlatformInt64 done,
     required PlatformInt64 total,
@@ -161,8 +145,7 @@ sealed class Outgoing with _$Outgoing {
   }) = Outgoing_Done;
 
   /// The connection dropped; looking for the receiver again (maybe on another network) to resume.
-  const factory Outgoing.reconnecting({required String error}) =
-      Outgoing_Reconnecting;
+  const factory Outgoing.reconnecting({required String error}) = Outgoing_Reconnecting;
   const factory Outgoing.failed({required String error}) = Outgoing_Failed;
 }
 
@@ -173,9 +156,6 @@ class Peer {
 
   /// Best address to connect to.
   final String addr;
-
-  /// Pairing code both devices show.
-  final String code;
 
   /// Its network link, e.g. "Wi-Fi 5 GHz · 866 Mbps · -60 dBm", if it says.
   final String? link;
@@ -188,7 +168,6 @@ class Peer {
     required this.os,
     required this.fingerprint,
     required this.addr,
-    required this.code,
     this.link,
     this.expected,
   });
@@ -199,7 +178,6 @@ class Peer {
       os.hashCode ^
       fingerprint.hashCode ^
       addr.hashCode ^
-      code.hashCode ^
       link.hashCode ^
       expected.hashCode;
 
@@ -212,7 +190,6 @@ class Peer {
           os == other.os &&
           fingerprint == other.fingerprint &&
           addr == other.addr &&
-          code == other.code &&
           link == other.link &&
           expected == other.expected;
 }
@@ -232,8 +209,5 @@ class Pick {
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
-      other is Pick &&
-          runtimeType == other.runtimeType &&
-          path == other.path &&
-          name == other.name;
+      other is Pick && runtimeType == other.runtimeType && path == other.path && name == other.name;
 }

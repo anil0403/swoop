@@ -41,11 +41,8 @@ sealed class BleEvent with _$BleEvent {
   const BleEvent._();
 
   /// A Swoop device advertising nearby. `id` is its Bluetooth address, `fp` the first 16 hex of its fingerprint.
-  const factory BleEvent.seen({
-    required String id,
-    required String name,
-    required String fp,
-  }) = BleEvent_Seen;
+  const factory BleEvent.seen({required String id, required String name, required String fp}) =
+      BleEvent_Seen;
 
   /// Another device wrote an invite to us (JSON, see PLAN.md).
   const factory BleEvent.invite({required String json}) = BleEvent_Invite;

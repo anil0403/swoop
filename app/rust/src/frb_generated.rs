@@ -998,6 +998,10 @@ impl SseDecode for crate::api::uft::Outgoing {
         let mut tag_ = <i32>::sse_decode(deserializer);
         match tag_ {
             0 => {
+                let mut var_code = <String>::sse_decode(deserializer);
+                return crate::api::uft::Outgoing::Code { code: var_code };
+            }
+            1 => {
                 let mut var_done = <i64>::sse_decode(deserializer);
                 let mut var_total = <i64>::sse_decode(deserializer);
                 let mut var_speed = <f64>::sse_decode(deserializer);
@@ -1013,7 +1017,7 @@ impl SseDecode for crate::api::uft::Outgoing {
                     streams: var_streams,
                 };
             }
-            1 => {
+            2 => {
                 let mut var_bytes = <i64>::sse_decode(deserializer);
                 let mut var_resumed = <i64>::sse_decode(deserializer);
                 let mut var_secs = <f64>::sse_decode(deserializer);
@@ -1027,11 +1031,11 @@ impl SseDecode for crate::api::uft::Outgoing {
                     peak: var_peak,
                 };
             }
-            2 => {
+            3 => {
                 let mut var_error = <String>::sse_decode(deserializer);
                 return crate::api::uft::Outgoing::Reconnecting { error: var_error };
             }
-            3 => {
+            4 => {
                 let mut var_error = <String>::sse_decode(deserializer);
                 return crate::api::uft::Outgoing::Failed { error: var_error };
             }
@@ -1049,7 +1053,6 @@ impl SseDecode for crate::api::uft::Peer {
         let mut var_os = <String>::sse_decode(deserializer);
         let mut var_fingerprint = <String>::sse_decode(deserializer);
         let mut var_addr = <String>::sse_decode(deserializer);
-        let mut var_code = <String>::sse_decode(deserializer);
         let mut var_link = <Option<String>>::sse_decode(deserializer);
         let mut var_expected = <Option<f64>>::sse_decode(deserializer);
         return crate::api::uft::Peer {
@@ -1057,7 +1060,6 @@ impl SseDecode for crate::api::uft::Peer {
             os: var_os,
             fingerprint: var_fingerprint,
             addr: var_addr,
-            code: var_code,
             link: var_link,
             expected: var_expected,
         };
@@ -1287,6 +1289,9 @@ impl flutter_rust_bridge::IntoIntoDart<crate::api::uft::Me> for crate::api::uft:
 impl flutter_rust_bridge::IntoDart for crate::api::uft::Outgoing {
     fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
         match self {
+            crate::api::uft::Outgoing::Code { code } => {
+                [0.into_dart(), code.into_into_dart().into_dart()].into_dart()
+            }
             crate::api::uft::Outgoing::Progress {
                 done,
                 total,
@@ -1295,7 +1300,7 @@ impl flutter_rust_bridge::IntoDart for crate::api::uft::Outgoing {
                 eta,
                 streams,
             } => [
-                0.into_dart(),
+                1.into_dart(),
                 done.into_into_dart().into_dart(),
                 total.into_into_dart().into_dart(),
                 speed.into_into_dart().into_dart(),
@@ -1311,7 +1316,7 @@ impl flutter_rust_bridge::IntoDart for crate::api::uft::Outgoing {
                 avg,
                 peak,
             } => [
-                1.into_dart(),
+                2.into_dart(),
                 bytes.into_into_dart().into_dart(),
                 resumed.into_into_dart().into_dart(),
                 secs.into_into_dart().into_dart(),
@@ -1320,10 +1325,10 @@ impl flutter_rust_bridge::IntoDart for crate::api::uft::Outgoing {
             ]
             .into_dart(),
             crate::api::uft::Outgoing::Reconnecting { error } => {
-                [2.into_dart(), error.into_into_dart().into_dart()].into_dart()
+                [3.into_dart(), error.into_into_dart().into_dart()].into_dart()
             }
             crate::api::uft::Outgoing::Failed { error } => {
-                [3.into_dart(), error.into_into_dart().into_dart()].into_dart()
+                [4.into_dart(), error.into_into_dart().into_dart()].into_dart()
             }
             _ => {
                 unimplemented!("");
@@ -1345,7 +1350,6 @@ impl flutter_rust_bridge::IntoDart for crate::api::uft::Peer {
             self.os.into_into_dart().into_dart(),
             self.fingerprint.into_into_dart().into_dart(),
             self.addr.into_into_dart().into_dart(),
-            self.code.into_into_dart().into_dart(),
             self.link.into_into_dart().into_dart(),
             self.expected.into_into_dart().into_dart(),
         ]
@@ -1657,6 +1661,10 @@ impl SseEncode for crate::api::uft::Outgoing {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
         match self {
+            crate::api::uft::Outgoing::Code { code } => {
+                <i32>::sse_encode(0, serializer);
+                <String>::sse_encode(code, serializer);
+            }
             crate::api::uft::Outgoing::Progress {
                 done,
                 total,
@@ -1665,7 +1673,7 @@ impl SseEncode for crate::api::uft::Outgoing {
                 eta,
                 streams,
             } => {
-                <i32>::sse_encode(0, serializer);
+                <i32>::sse_encode(1, serializer);
                 <i64>::sse_encode(done, serializer);
                 <i64>::sse_encode(total, serializer);
                 <f64>::sse_encode(speed, serializer);
@@ -1680,7 +1688,7 @@ impl SseEncode for crate::api::uft::Outgoing {
                 avg,
                 peak,
             } => {
-                <i32>::sse_encode(1, serializer);
+                <i32>::sse_encode(2, serializer);
                 <i64>::sse_encode(bytes, serializer);
                 <i64>::sse_encode(resumed, serializer);
                 <f64>::sse_encode(secs, serializer);
@@ -1688,11 +1696,11 @@ impl SseEncode for crate::api::uft::Outgoing {
                 <f64>::sse_encode(peak, serializer);
             }
             crate::api::uft::Outgoing::Reconnecting { error } => {
-                <i32>::sse_encode(2, serializer);
+                <i32>::sse_encode(3, serializer);
                 <String>::sse_encode(error, serializer);
             }
             crate::api::uft::Outgoing::Failed { error } => {
-                <i32>::sse_encode(3, serializer);
+                <i32>::sse_encode(4, serializer);
                 <String>::sse_encode(error, serializer);
             }
             _ => {
@@ -1709,7 +1717,6 @@ impl SseEncode for crate::api::uft::Peer {
         <String>::sse_encode(self.os, serializer);
         <String>::sse_encode(self.fingerprint, serializer);
         <String>::sse_encode(self.addr, serializer);
-        <String>::sse_encode(self.code, serializer);
         <Option<String>>::sse_encode(self.link, serializer);
         <Option<f64>>::sse_encode(self.expected, serializer);
     }

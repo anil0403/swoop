@@ -1,6 +1,7 @@
 //! Sender: offer files, then stripe chunks over adaptive parallel TLS streams.
 
 use crate::VERSION;
+use crate::pair;
 use crate::progress::{Meter, Snapshot};
 use crate::proto::{self, CHUNK_SIZE, FileEntry, Msg, Role, bad, chunk_count};
 use crate::tls::{self, Identity};
@@ -44,7 +45,12 @@ pub struct SendOptions {
     /// Set to stop the transfer; `send` then fails with `Interrupted`. The receiver keeps
     /// what arrived, so sending again resumes.
     pub cancel: Option<Arc<AtomicBool>>,
+    /// Gets the pairing code once connected, to show while the receiver decides. Not called
+    /// for a receiver that predates per-connection codes.
+    pub on_code: Option<OnCode>,
 }
+
+pub type OnCode = Box<dyn Fn(&str) + Send + Sync>;
 
 #[derive(Debug, Clone)]
 pub struct SendStats {
@@ -89,12 +95,14 @@ fn session(
     let cfg = tls::client_config(id, server_fp)?;
     let session = proto::random_u64();
     let caps = tls::caps();
+    let nonce = pair::nonce()?;
     let hello = |role| Msg::Hello {
         version: VERSION,
         session,
         role,
         caps: caps.clone(),
         name: opts.name.clone(),
+        commit: (role == Role::Control).then(|| pair::commit(&nonce)),
     };
 
     let mut ctrl = tls::connect(addr, cfg.clone())?;
@@ -102,8 +110,14 @@ fn session(
     ctrl.flush()?;
     match proto::read_msg(&mut ctrl)? {
         Msg::Welcome {
-            version: VERSION, ..
-        } => {}
+            version: VERSION,
+            nonce: theirs,
+            ..
+        } => {
+            if let (Some(theirs), Some(on_code)) = (theirs, &opts.on_code) {
+                on_code(&pair::code(&id.fingerprint(), server_fp, &nonce, &theirs));
+            }
+        }
         Msg::Welcome { version, .. } => {
             return Err(bad(&format!("receiver speaks protocol {version}")));
         }
@@ -113,6 +127,7 @@ fn session(
         &mut ctrl,
         &Msg::Offer {
             chunk_size: CHUNK_SIZE,
+            reveal: Some(nonce.clone()),
             files: files.clone(),
             dirs: dirs.clone(),
         },

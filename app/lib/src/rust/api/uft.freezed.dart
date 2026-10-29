@@ -611,10 +611,11 @@ extension OutgoingPatterns on Outgoing {
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeMap<TResult extends Object?>({TResult Function( Outgoing_Progress value)?  progress,TResult Function( Outgoing_Done value)?  done,TResult Function( Outgoing_Reconnecting value)?  reconnecting,TResult Function( Outgoing_Failed value)?  failed,required TResult orElse(),}){
+@optionalTypeArgs TResult maybeMap<TResult extends Object?>({TResult Function( Outgoing_Code value)?  code,TResult Function( Outgoing_Progress value)?  progress,TResult Function( Outgoing_Done value)?  done,TResult Function( Outgoing_Reconnecting value)?  reconnecting,TResult Function( Outgoing_Failed value)?  failed,required TResult orElse(),}){
 final _that = this;
 switch (_that) {
-case Outgoing_Progress() when progress != null:
+case Outgoing_Code() when code != null:
+return code(_that);case Outgoing_Progress() when progress != null:
 return progress(_that);case Outgoing_Done() when done != null:
 return done(_that);case Outgoing_Reconnecting() when reconnecting != null:
 return reconnecting(_that);case Outgoing_Failed() when failed != null:
@@ -636,10 +637,11 @@ return failed(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult map<TResult extends Object?>({required TResult Function( Outgoing_Progress value)  progress,required TResult Function( Outgoing_Done value)  done,required TResult Function( Outgoing_Reconnecting value)  reconnecting,required TResult Function( Outgoing_Failed value)  failed,}){
+@optionalTypeArgs TResult map<TResult extends Object?>({required TResult Function( Outgoing_Code value)  code,required TResult Function( Outgoing_Progress value)  progress,required TResult Function( Outgoing_Done value)  done,required TResult Function( Outgoing_Reconnecting value)  reconnecting,required TResult Function( Outgoing_Failed value)  failed,}){
 final _that = this;
 switch (_that) {
-case Outgoing_Progress():
+case Outgoing_Code():
+return code(_that);case Outgoing_Progress():
 return progress(_that);case Outgoing_Done():
 return done(_that);case Outgoing_Reconnecting():
 return reconnecting(_that);case Outgoing_Failed():
@@ -657,10 +659,11 @@ return failed(_that);}
 /// }
 /// ```
 
-@optionalTypeArgs TResult? mapOrNull<TResult extends Object?>({TResult? Function( Outgoing_Progress value)?  progress,TResult? Function( Outgoing_Done value)?  done,TResult? Function( Outgoing_Reconnecting value)?  reconnecting,TResult? Function( Outgoing_Failed value)?  failed,}){
+@optionalTypeArgs TResult? mapOrNull<TResult extends Object?>({TResult? Function( Outgoing_Code value)?  code,TResult? Function( Outgoing_Progress value)?  progress,TResult? Function( Outgoing_Done value)?  done,TResult? Function( Outgoing_Reconnecting value)?  reconnecting,TResult? Function( Outgoing_Failed value)?  failed,}){
 final _that = this;
 switch (_that) {
-case Outgoing_Progress() when progress != null:
+case Outgoing_Code() when code != null:
+return code(_that);case Outgoing_Progress() when progress != null:
 return progress(_that);case Outgoing_Done() when done != null:
 return done(_that);case Outgoing_Reconnecting() when reconnecting != null:
 return reconnecting(_that);case Outgoing_Failed() when failed != null:
@@ -681,9 +684,10 @@ return failed(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeWhen<TResult extends Object?>({TResult Function( PlatformInt64 done,  PlatformInt64 total,  double speed,  double peak,  double? eta,  int streams)?  progress,TResult Function( PlatformInt64 bytes,  PlatformInt64 resumed,  double secs,  double avg,  double peak)?  done,TResult Function( String error)?  reconnecting,TResult Function( String error)?  failed,required TResult orElse(),}) {final _that = this;
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>({TResult Function( String code)?  code,TResult Function( PlatformInt64 done,  PlatformInt64 total,  double speed,  double peak,  double? eta,  int streams)?  progress,TResult Function( PlatformInt64 bytes,  PlatformInt64 resumed,  double secs,  double avg,  double peak)?  done,TResult Function( String error)?  reconnecting,TResult Function( String error)?  failed,required TResult orElse(),}) {final _that = this;
 switch (_that) {
-case Outgoing_Progress() when progress != null:
+case Outgoing_Code() when code != null:
+return code(_that.code);case Outgoing_Progress() when progress != null:
 return progress(_that.done,_that.total,_that.speed,_that.peak,_that.eta,_that.streams);case Outgoing_Done() when done != null:
 return done(_that.bytes,_that.resumed,_that.secs,_that.avg,_that.peak);case Outgoing_Reconnecting() when reconnecting != null:
 return reconnecting(_that.error);case Outgoing_Failed() when failed != null:
@@ -705,9 +709,10 @@ return failed(_that.error);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult when<TResult extends Object?>({required TResult Function( PlatformInt64 done,  PlatformInt64 total,  double speed,  double peak,  double? eta,  int streams)  progress,required TResult Function( PlatformInt64 bytes,  PlatformInt64 resumed,  double secs,  double avg,  double peak)  done,required TResult Function( String error)  reconnecting,required TResult Function( String error)  failed,}) {final _that = this;
+@optionalTypeArgs TResult when<TResult extends Object?>({required TResult Function( String code)  code,required TResult Function( PlatformInt64 done,  PlatformInt64 total,  double speed,  double peak,  double? eta,  int streams)  progress,required TResult Function( PlatformInt64 bytes,  PlatformInt64 resumed,  double secs,  double avg,  double peak)  done,required TResult Function( String error)  reconnecting,required TResult Function( String error)  failed,}) {final _that = this;
 switch (_that) {
-case Outgoing_Progress():
+case Outgoing_Code():
+return code(_that.code);case Outgoing_Progress():
 return progress(_that.done,_that.total,_that.speed,_that.peak,_that.eta,_that.streams);case Outgoing_Done():
 return done(_that.bytes,_that.resumed,_that.secs,_that.avg,_that.peak);case Outgoing_Reconnecting():
 return reconnecting(_that.error);case Outgoing_Failed():
@@ -725,9 +730,10 @@ return failed(_that.error);}
 /// }
 /// ```
 
-@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>({TResult? Function( PlatformInt64 done,  PlatformInt64 total,  double speed,  double peak,  double? eta,  int streams)?  progress,TResult? Function( PlatformInt64 bytes,  PlatformInt64 resumed,  double secs,  double avg,  double peak)?  done,TResult? Function( String error)?  reconnecting,TResult? Function( String error)?  failed,}) {final _that = this;
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>({TResult? Function( String code)?  code,TResult? Function( PlatformInt64 done,  PlatformInt64 total,  double speed,  double peak,  double? eta,  int streams)?  progress,TResult? Function( PlatformInt64 bytes,  PlatformInt64 resumed,  double secs,  double avg,  double peak)?  done,TResult? Function( String error)?  reconnecting,TResult? Function( String error)?  failed,}) {final _that = this;
 switch (_that) {
-case Outgoing_Progress() when progress != null:
+case Outgoing_Code() when code != null:
+return code(_that.code);case Outgoing_Progress() when progress != null:
 return progress(_that.done,_that.total,_that.speed,_that.peak,_that.eta,_that.streams);case Outgoing_Done() when done != null:
 return done(_that.bytes,_that.resumed,_that.secs,_that.avg,_that.peak);case Outgoing_Reconnecting() when reconnecting != null:
 return reconnecting(_that.error);case Outgoing_Failed() when failed != null:
@@ -736,6 +742,74 @@ return failed(_that.error);case _:
 
 }
 }
+
+}
+
+/// @nodoc
+
+
+class Outgoing_Code extends Outgoing {
+  const Outgoing_Code({required this.code}): super._();
+  
+
+ final  String code;
+
+/// Create a copy of Outgoing
+/// with the given fields replaced by the non-null parameter values.
+@JsonKey(includeFromJson: false, includeToJson: false)
+@pragma('vm:prefer-inline')
+$Outgoing_CodeCopyWith<Outgoing_Code> get copyWith => _$Outgoing_CodeCopyWithImpl<Outgoing_Code>(this, _$identity);
+
+
+
+@override
+bool operator ==(Object other) {
+    return identical(this, other) || (other.runtimeType == runtimeType&&other is Outgoing_Code&&(identical(other.code, code) || other.code == code));
+}
+
+
+@override
+int get hashCode {
+    return Object.hash(runtimeType,code);
+}
+
+@override
+String toString() {
+    return 'Outgoing.code(code: $code)';
+}
+
+
+}
+
+/// @nodoc
+abstract mixin class $Outgoing_CodeCopyWith<$Res> implements $OutgoingCopyWith<$Res> {
+  factory $Outgoing_CodeCopyWith(Outgoing_Code value, $Res Function(Outgoing_Code) _then) = _$Outgoing_CodeCopyWithImpl;
+@useResult
+$Res call({
+ String code
+});
+
+
+
+
+}
+/// @nodoc
+class _$Outgoing_CodeCopyWithImpl<$Res>
+    implements $Outgoing_CodeCopyWith<$Res> {
+  _$Outgoing_CodeCopyWithImpl(this._self, this._then);
+
+  final Outgoing_Code _self;
+  final $Res Function(Outgoing_Code) _then;
+
+/// Create a copy of Outgoing
+/// with the given fields replaced by the non-null parameter values.
+@pragma('vm:prefer-inline') $Res call({Object? code = null,}) {
+  return _then(Outgoing_Code(
+code: null == code ? _self.code : code // ignore: cast_nullable_to_non_nullable
+as String,
+  ));
+}
+
 
 }
 

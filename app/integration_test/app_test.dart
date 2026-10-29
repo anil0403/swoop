@@ -72,7 +72,7 @@ void main() {
 
     // The peer sends back: offer dialog with the code, accept it.
     await waitFor(tester, find.text('Accept'), secs: 120);
-    expect(find.text(p.code), findsWidgets);
+    expect(find.textContaining(RegExp(r'^\d{3} \d{3}$')), findsOneWidget);
     await tester.tap(find.text('Accept'));
     await waitFor(tester, find.textContaining('Received '), secs: 120, why: () => home.transfers);
   });

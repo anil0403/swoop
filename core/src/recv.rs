@@ -1,6 +1,7 @@
 //! Receiver: accept sessions, verify chunks, write files, resume.
 
 use crate::VERSION;
+use crate::pair;
 use crate::proto::{self, Caps, FileEntry, Frame, Msg, Role, bad, chunk_count};
 use crate::tls::{self, Identity};
 use serde::{Deserialize, Serialize};
@@ -36,6 +37,9 @@ pub struct Offer {
     pub peer_name: String,
     pub files: usize,
     pub total: u64,
+    /// The pairing code both screens show for this connection; None from a sender that
+    /// predates them, whose offers only devices that trust it should take.
+    pub code: Option<String>,
 }
 
 /// Returns whether to accept an offer.
@@ -87,7 +91,7 @@ pub fn serve(
     on_event: impl Fn(RecvEvent) + Send + Sync + 'static,
 ) -> io::Result<()> {
     let cfg = tls::server_config(&id)?;
-    let ctx = Arc::new(Ctx::new(opts, tls::caps(), on_event));
+    let ctx = Arc::new(Ctx::new(opts, tls::caps(), id.fingerprint(), on_event));
     accept_loop(listener, ctx, move |tcp| tls::accept(tcp, cfg.clone()))
 }
 
@@ -108,6 +112,8 @@ pub fn safe_rel_path(path: &str) -> Option<PathBuf> {
 }
 
 struct Ctx {
+    /// This device's fingerprint, for pairing codes.
+    fp: String,
     dir: Arc<Mutex<PathBuf>>,
     null_sink: bool,
     name: String,
@@ -121,9 +127,11 @@ impl Ctx {
     fn new(
         opts: RecvOptions,
         caps: Caps,
+        fp: String,
         on_event: impl Fn(RecvEvent) + Send + Sync + 'static,
     ) -> Ctx {
         Ctx {
+            fp,
             dir: opts.dir,
             null_sink: opts.null_sink,
             name: opts.name,
@@ -203,6 +211,7 @@ fn handle<S: Read + Write>(mut s: S, peer_fp: String, ctx: &Ctx) -> io::Result<(
         session,
         role,
         name,
+        commit,
         ..
     } = proto::read_msg(&mut (&mut s).take(64 << 10))?
     else {
@@ -213,7 +222,7 @@ fn handle<S: Read + Write>(mut s: S, peer_fp: String, ctx: &Ctx) -> io::Result<(
         return send(&mut s, &Msg::Error { message });
     }
     match role {
-        Role::Control => control(s, ctx, session, peer_fp, proto::clean_name(&name)),
+        Role::Control => control(s, ctx, session, peer_fp, proto::clean_name(&name), commit),
         Role::Data => {
             let sess = ctx.sessions.lock().unwrap().get(&session).cloned();
             match sess {
@@ -676,20 +685,31 @@ fn control<S: Read + Write>(
     id: u64,
     peer_fp: String,
     peer_name: String,
+    commit: Option<String>,
 ) -> io::Result<()> {
+    let nonce = commit.as_ref().map(|_| pair::nonce()).transpose()?;
     let welcome = Msg::Welcome {
         version: VERSION,
         caps: ctx.caps.clone(),
         name: ctx.name.clone(),
+        nonce: nonce.clone(),
     };
     send(&mut s, &welcome)?;
     let Msg::Offer {
         chunk_size,
+        reveal,
         files,
         dirs,
     } = proto::read_msg(&mut s)?
     else {
         return Err(bad("expected offer"));
+    };
+    let code = match (commit, nonce, reveal) {
+        (Some(c), Some(n), Some(r)) if pair::commit(&r) == c => {
+            Some(pair::code(&peer_fp, &ctx.fp, &r, &n))
+        }
+        (Some(_), ..) => return Err(bad("pairing nonce doesn't match its commit")),
+        _ => None,
     };
     // Ones with names that can't be made safely are skipped; they hold no files.
     let dirs: Vec<_> = dirs.iter().filter_map(|d| safe_rel_path(d)).collect();
@@ -705,6 +725,7 @@ fn control<S: Read + Write>(
             peer_name: peer_name.clone(),
             files: files.len(),
             total,
+            code,
         };
         if !accept(&offer) {
             let reason = "declined by receiver".into();
@@ -944,12 +965,15 @@ mod tests {
             name: "rx".into(),
             accept,
         };
-        let ctx = Arc::new(Ctx::new(opts, caps(), move |e| {
+        let ctx = Arc::new(Ctx::new(opts, caps(), "me".into(), move |e| {
             let _ = tx.send(e);
         }));
         thread::spawn(move || accept_loop(l, ctx, |tcp| Ok((tcp, "peer".to_string()))));
         (addr, rx)
     }
+
+    /// The test sender's pairing nonce.
+    const NONCE: &str = "n";
 
     fn hello(addr: SocketAddr, session: u64, role: Role) -> TcpStream {
         let mut s = TcpStream::connect(addr).unwrap();
@@ -962,6 +986,7 @@ mod tests {
                 role,
                 caps: caps(),
                 name: "tx".into(),
+                commit: (role == Role::Control).then(|| pair::commit(NONCE)),
             },
         )
         .unwrap();
@@ -969,6 +994,16 @@ mod tests {
     }
 
     fn offer(addr: SocketAddr, session: u64, chunk_size: u64, files: &[F]) -> (TcpStream, Msg) {
+        offer_revealing(addr, session, chunk_size, files, NONCE)
+    }
+
+    fn offer_revealing(
+        addr: SocketAddr,
+        session: u64,
+        chunk_size: u64,
+        files: &[F],
+        reveal: &str,
+    ) -> (TcpStream, Msg) {
         let mut c = hello(addr, session, Role::Control);
         assert!(matches!(
             proto::read_msg(&mut c).unwrap(),
@@ -987,12 +1022,13 @@ mod tests {
             &mut c,
             &Msg::Offer {
                 chunk_size,
+                reveal: Some(reveal.into()),
                 files,
                 dirs,
             },
         )
         .unwrap();
-        let reply = proto::read_msg(&mut c).unwrap();
+        let reply = proto::read_msg(&mut c).unwrap_or(Msg::Done);
         (c, reply)
     }
 
@@ -1160,7 +1196,23 @@ mod tests {
             (o.peer_fp.as_str(), o.peer_name.as_str(), o.files, o.total),
             ("peer", "tx", 2, 15)
         );
+        assert!(o.code.is_some_and(|c| c.len() == 7));
         assert!(!dir.exists());
+    }
+
+    #[test]
+    fn nonce_not_matching_its_commit_is_refused() {
+        let dir = tmp("commit");
+        let asked = Arc::new(AtomicBool::new(false));
+        let a = asked.clone();
+        let accept: Accept = Arc::new(move |_: &Offer| {
+            a.store(true, Ordering::SeqCst);
+            true
+        });
+        let (addr, _rx) = start_with(&dir, false, Some(accept));
+        let reply = offer_revealing(addr, 13, CS, &[f("a", 10)], "other").1;
+        assert!(!matches!(reply, Msg::Accept { .. }));
+        assert!(!asked.load(Ordering::SeqCst));
     }
 
     #[test]

@@ -10,7 +10,8 @@
 //! ```
 //!
 //! ```text
-//! control conn  S→R Hello{role: control}   R→S Welcome   S→R Offer   R→S Accept | Reject
+//! control conn  S→R Hello{role: control, commit}   R→S Welcome{nonce}   S→R Offer{reveal}
+//!               R→S Accept | Reject
 //!               R→S Progress (~every 100 ms) …           R→S Done | Error
 //! data conns    S→R Hello{role: data, same session}      S→R Chunk* then close
 //! ```
@@ -80,14 +81,24 @@ pub enum Msg {
         role: Role,
         caps: Caps,
         name: String,
+        /// Control only: `pair::commit` of the sender's pairing nonce. Senders that predate
+        /// it can only send to devices that trust them.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        commit: Option<String>,
     },
     Welcome {
         version: u32,
         caps: Caps,
         name: String,
+        /// The receiver's pairing nonce, when the Hello had a commit.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        nonce: Option<String>,
     },
     Offer {
         chunk_size: u64,
+        /// The sender's pairing nonce, matching the commit.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        reveal: Option<String>,
         #[serde(deserialize_with = "bounded")]
         files: Vec<FileEntry>,
         /// Empty folders to create, relative paths like `files`. Optional on the wire, so
@@ -293,6 +304,7 @@ mod tests {
     fn roundtrip() {
         let msg = Msg::Offer {
             chunk_size: CHUNK_SIZE,
+            reveal: Some("n".into()),
             files: vec![FileEntry {
                 path: "a/b.txt".into(),
                 size: 5,

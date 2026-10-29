@@ -46,7 +46,47 @@ fn opts(streams: Streams) -> SendOptions {
         streams,
         name: "tx".into(),
         cancel: None,
+        on_code: None,
     }
+}
+
+#[test]
+fn both_sides_show_the_same_code() {
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let addr = listener.local_addr().unwrap();
+    let id = Arc::new(Identity::generate().unwrap());
+    let fp = id.fingerprint();
+    let (shown_rx, shown_tx) = (Arc::new(Mutex::new(Vec::new())), Arc::new(Mutex::new(None)));
+    let s = shown_rx.clone();
+    let ropts = RecvOptions {
+        dir: Arc::new(Mutex::new(temp_dir("code"))),
+        null_sink: true,
+        name: "rx".into(),
+        accept: Some(Arc::new(move |o: &recv::Offer| {
+            s.lock().unwrap().push(o.code.clone());
+            true
+        })),
+    };
+    std::thread::spawn(move || recv::serve(listener, id, ropts, |_| {}));
+    let sender = Identity::generate().unwrap();
+    let src = [Source::Synthetic {
+        name: "x".into(),
+        size: 10,
+    }];
+    for _ in 0..2 {
+        let t = shown_tx.clone();
+        let o = SendOptions {
+            on_code: Some(Box::new(move |c| *t.lock().unwrap() = Some(c.to_string()))),
+            ..opts(Streams::Fixed(1))
+        };
+        send::send(addr, &sender, &fp, &src, &o, |_, _| {}).unwrap();
+        let rx = shown_rx.lock().unwrap().last().cloned().flatten();
+        assert!(rx.is_some());
+        assert_eq!(rx, shown_tx.lock().unwrap().clone());
+    }
+    // Fresh nonces each time: the same two devices get a new code per connection.
+    let v = shown_rx.lock().unwrap();
+    assert_ne!(v[0], v[1]);
 }
 
 #[test]

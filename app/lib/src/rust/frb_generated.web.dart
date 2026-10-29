@@ -127,24 +127,16 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   AnyhowException sse_decode_AnyhowException(SseDeserializer deserializer);
 
   @protected
-  RustStreamSink<BleEvent> sse_decode_StreamSink_ble_event_Sse(
-    SseDeserializer deserializer,
-  );
+  RustStreamSink<BleEvent> sse_decode_StreamSink_ble_event_Sse(SseDeserializer deserializer);
 
   @protected
-  RustStreamSink<Incoming> sse_decode_StreamSink_incoming_Sse(
-    SseDeserializer deserializer,
-  );
+  RustStreamSink<Incoming> sse_decode_StreamSink_incoming_Sse(SseDeserializer deserializer);
 
   @protected
-  RustStreamSink<List<Peer>> sse_decode_StreamSink_list_peer_Sse(
-    SseDeserializer deserializer,
-  );
+  RustStreamSink<List<Peer>> sse_decode_StreamSink_list_peer_Sse(SseDeserializer deserializer);
 
   @protected
-  RustStreamSink<Outgoing> sse_decode_StreamSink_outgoing_Sse(
-    SseDeserializer deserializer,
-  );
+  RustStreamSink<Outgoing> sse_decode_StreamSink_outgoing_Sse(SseDeserializer deserializer);
 
   @protected
   String sse_decode_String(SseDeserializer deserializer);
@@ -231,22 +223,13 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   Wifi sse_decode_wifi(SseDeserializer deserializer);
 
   @protected
-  void sse_encode_AnyhowException(
-    AnyhowException self,
-    SseSerializer serializer,
-  );
+  void sse_encode_AnyhowException(AnyhowException self, SseSerializer serializer);
 
   @protected
-  void sse_encode_StreamSink_ble_event_Sse(
-    RustStreamSink<BleEvent> self,
-    SseSerializer serializer,
-  );
+  void sse_encode_StreamSink_ble_event_Sse(RustStreamSink<BleEvent> self, SseSerializer serializer);
 
   @protected
-  void sse_encode_StreamSink_incoming_Sse(
-    RustStreamSink<Incoming> self,
-    SseSerializer serializer,
-  );
+  void sse_encode_StreamSink_incoming_Sse(RustStreamSink<Incoming> self, SseSerializer serializer);
 
   @protected
   void sse_encode_StreamSink_list_peer_Sse(
@@ -255,10 +238,7 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
-  void sse_encode_StreamSink_outgoing_Sse(
-    RustStreamSink<Outgoing> self,
-    SseSerializer serializer,
-  );
+  void sse_encode_StreamSink_outgoing_Sse(RustStreamSink<Outgoing> self, SseSerializer serializer);
 
   @protected
   void sse_encode_String(String self, SseSerializer serializer);
@@ -306,10 +286,7 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   void sse_encode_list_pick(List<Pick> self, SseSerializer serializer);
 
   @protected
-  void sse_encode_list_prim_u_8_strict(
-    Uint8List self,
-    SseSerializer serializer,
-  );
+  void sse_encode_list_prim_u_8_strict(Uint8List self, SseSerializer serializer);
 
   @protected
   void sse_encode_me(Me self, SseSerializer serializer);
