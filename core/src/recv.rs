@@ -11,7 +11,7 @@ use std::io::{self, BufRead, BufReader, Read, Write};
 use std::net::{TcpListener, TcpStream};
 use std::os::unix::fs::FileExt;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::mpsc::{Receiver, Sender, channel, sync_channel};
 use std::sync::{Arc, Mutex};
 use std::thread;
@@ -699,7 +699,37 @@ fn run<S: Write>(
             finalize(&sess.files[i])?;
         }
     }
-    let mut persisted = Instant::now();
+    // Off the progress loop: with data still arriving, a syncfs can take longer than the sender
+    // waits for progress (30 s).
+    let stop = AtomicBool::new(false);
+    thread::scope(|sc| {
+        sc.spawn(|| {
+            let mut persisted = Instant::now();
+            while !stop.load(Ordering::Relaxed) {
+                thread::sleep(Duration::from_millis(100));
+                if persisted.elapsed() >= Duration::from_secs(2) {
+                    if let Err(e) = sess.persist() {
+                        return sess.fail(e.to_string());
+                    }
+                    persisted = Instant::now();
+                }
+            }
+        });
+        let r = progress(s, ctx, id, sess, resumed, total, start);
+        stop.store(true, Ordering::Relaxed);
+        r
+    })
+}
+
+fn progress<S: Write>(
+    s: &mut S,
+    ctx: &Ctx,
+    id: u64,
+    sess: &Session,
+    resumed: u64,
+    total: u64,
+    start: Instant,
+) -> io::Result<()> {
     loop {
         let (complete, err) = {
             let st = sess.st.lock().unwrap();
@@ -727,10 +757,6 @@ fn run<S: Write>(
                 secs: start.elapsed().as_secs_f64(),
             });
             return Ok(());
-        }
-        if persisted.elapsed() >= Duration::from_secs(2) {
-            sess.persist()?;
-            persisted = Instant::now();
         }
         thread::sleep(Duration::from_millis(100));
     }
