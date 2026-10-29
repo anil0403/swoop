@@ -134,7 +134,7 @@ Check any install with `swoop version`.
    on Android, use **Share → Swoop** from any app.
 3. **Accept.** The first time, both screens show the same 6-digit code. Check it matches and tap **Accept**, or
    **Always accept** to trust that device from now on. The code is new every time, so a code that doesn't match
-   means someone else is answering: tap **Decline**. A device on a Swoop older than 2.6.1 can't pair anymore,
+   means someone else is answering: tap **Decline**. A device on Swoop 2.6.1 or older can't pair anymore,
    only send to devices that already trust it, so update both.
 4. **Done.** Files land in `Downloads/Swoop` (Linux) or `Download/Swoop` (Android). Photos and videos appear in
    the Gallery.
