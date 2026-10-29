@@ -45,6 +45,7 @@ fn opts(streams: Streams) -> SendOptions {
     SendOptions {
         streams,
         name: "tx".into(),
+        cancel: None,
     }
 }
 

@@ -39,6 +39,9 @@ pub struct SendOptions {
     pub streams: Streams,
     /// Device name shown to the receiver.
     pub name: String,
+    /// Set to stop the transfer; `send` then fails with `Interrupted`. The receiver keeps
+    /// what arrived, so sending again resumes.
+    pub cancel: Option<Arc<AtomicBool>>,
 }
 
 #[derive(Debug, Clone)]
@@ -137,8 +140,18 @@ pub fn send(
             handles.push(s.spawn(|| stream(&job)));
         }
 
+        let cancelled = || {
+            opts.cancel
+                .as_ref()
+                .is_some_and(|c| c.load(Ordering::Relaxed))
+        };
         let res = loop {
             match proto::read_msg(&mut ctrl) {
+                Ok(Msg::Progress { .. }) if cancelled() => {
+                    job.abort.store(true, Ordering::SeqCst);
+                    let _ = job.ctrl.shutdown(std::net::Shutdown::Both);
+                    break Err(io::Error::new(io::ErrorKind::Interrupted, "cancelled"));
+                }
                 Ok(Msg::Progress { done }) => {
                     let snap = meter.update(done);
                     let now = Instant::now();
@@ -183,6 +196,9 @@ pub fn send(
         }
         // After Done the receiver has verified everything, so late stream errors don't matter.
         if let Err(e) = res {
+            if e.kind() == io::ErrorKind::Interrupted {
+                return Err(e);
+            }
             return Err(stream_err.filter(|_| stream_failed).unwrap_or(e));
         }
 
