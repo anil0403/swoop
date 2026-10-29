@@ -880,7 +880,20 @@ class HomeState extends State<Home> {
               )
             : null,
       ),
-      for (final t in transfers) Appear(key: ObjectKey(t), child: TransferCard(t)),
+      for (final t in transfers)
+        Appear(
+          key: ObjectKey(t),
+          // Finished ones swipe away either way; a running one has to be cancelled first.
+          child: t.result == null
+              ? TransferCard(t)
+              : Dismissible(
+                  key: ObjectKey(t),
+                  background: swipeBg(theme, Alignment.centerLeft),
+                  secondaryBackground: swipeBg(theme, Alignment.centerRight),
+                  onDismissed: (_) => setState(() => transfers.remove(t)),
+                  child: TransferCard(t),
+                ),
+        ),
     ];
     return AnnotatedRegion(
       value: SystemUiOverlayStyle(
@@ -1029,6 +1042,18 @@ class HomeState extends State<Home> {
       ),
     );
   }
+
+  /// Shown behind a transfer card while it's swiped away; same shape and margin as the card.
+  Widget swipeBg(ThemeData theme, Alignment side) => Container(
+    margin: const EdgeInsets.symmetric(vertical: 4),
+    padding: const EdgeInsets.symmetric(horizontal: 24),
+    alignment: side,
+    decoration: BoxDecoration(
+      color: theme.colorScheme.errorContainer,
+      borderRadius: BorderRadius.circular(16),
+    ),
+    child: Icon(Icons.delete_outline, color: theme.colorScheme.onErrorContainer),
+  );
 
   Widget header(ThemeData theme, String text, {Widget? trailing, Widget? action}) => Padding(
     padding: const EdgeInsets.fromLTRB(4, 24, 0, 8),
