@@ -19,6 +19,7 @@ import android.provider.OpenableColumns
 import android.provider.Settings
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
+import io.flutter.plugin.common.EventChannel
 import io.flutter.plugin.common.MethodChannel
 import java.io.File
 
@@ -32,12 +33,24 @@ class MainActivity : FlutterActivity() {
     private var wifiLocks: List<WifiManager.WifiLock> = emptyList()
     private var wake: PowerManager.WakeLock? = null
     private var network: ConnectivityManager.NetworkCallback? = null
+    private val direct by lazy { Direct(applicationContext, ::localBinding) }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         val perms = mutableListOf<String>()
         if (Build.VERSION.SDK_INT <= 29) perms += Manifest.permission.WRITE_EXTERNAL_STORAGE
         if (Build.VERSION.SDK_INT >= 33) perms += Manifest.permission.POST_NOTIFICATIONS
+        // Direct link (BLE + hotspot). Up to 12 the hotspot needs precise location; up to 11 so does BLE scanning.
+        if (Build.VERSION.SDK_INT <= 32) {
+            perms += listOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION)
+        }
+        if (Build.VERSION.SDK_INT >= 31) {
+            perms += listOf(
+                Manifest.permission.BLUETOOTH_SCAN, Manifest.permission.BLUETOOTH_ADVERTISE,
+                Manifest.permission.BLUETOOTH_CONNECT,
+            )
+        }
+        if (Build.VERSION.SDK_INT >= 33) perms += Manifest.permission.NEARBY_WIFI_DEVICES
         if (perms.isNotEmpty()) requestPermissions(perms.toTypedArray(), 0)
         // Discovery queries arrive by multicast and broadcast, which Wi-Fi drops without this.
         multicast = wifi().createMulticastLock("uft").apply { setReferenceCounted(false); acquire() }
@@ -46,8 +59,14 @@ class MainActivity : FlutterActivity() {
         startForegroundService(Intent(this, TransferService::class.java))
     }
 
+    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        direct.retry()
+    }
+
     override fun onDestroy() {
         busy(false)
+        direct.close()
         multicast?.release()
         network?.let { getSystemService(ConnectivityManager::class.java).unregisterNetworkCallback(it) }
         fds.values.forEach { it.close() }
@@ -77,9 +96,25 @@ class MainActivity : FlutterActivity() {
                     busy(call.arguments as Boolean)
                     result.success(null)
                 }
+                "bleStart" -> direct.bleStart(call.argument<String>("fp")!!, result)
+                "bleInvite" -> direct.bleInvite(call.argument<String>("id")!!, call.argument<String>("json")!!, result)
+                "host" -> direct.host(result)
+                "stopHost" -> {
+                    direct.stopHost()
+                    result.success(null)
+                }
+                "join" -> direct.join(
+                    call.argument<String>("ssid")!!, call.argument<String>("pass")!!, call.argument<String>("sec")!!,
+                    result,
+                )
+                "leave" -> {
+                    direct.leave()
+                    result.success(null)
+                }
                 else -> result.notImplemented()
             }
         }
+        EventChannel(engine.dartExecutor.binaryMessenger, "uft/ble").setStreamHandler(direct)
     }
 
     private fun wifi() = applicationContext.getSystemService(WifiManager::class.java)
@@ -110,6 +145,15 @@ class MainActivity : FlutterActivity() {
                 if (cm.boundNetworkForProcess == n) cm.bindProcessToNetwork(null)
             }
         }.also { cm.registerNetworkCallback(req, it) }
+    }
+
+    /** The normal binding ([bindToLocalNetwork]) on, or off and unbound: for hosting or joining a hotspot. */
+    private fun localBinding(on: Boolean) {
+        val cm = getSystemService(ConnectivityManager::class.java)
+        network?.let { cm.unregisterNetworkCallback(it) }
+        network = null
+        cm.bindProcessToNetwork(null)
+        if (on) bindToLocalNetwork()
     }
 
     /** While transferring: CPU on and Wi-Fi out of power save, also with the screen off. */

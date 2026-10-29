@@ -9,6 +9,19 @@
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <!-- Saving into Download/uft: needed up to Android 10; 11+ lets apps add files there. -->
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="29" />
+    <!-- Direct link: BLE advertise/scan/invite, LocalOnlyHotspot, joining it. -->
+    <uses-permission android:name="android.permission.BLUETOOTH" android:maxSdkVersion="30" />
+    <uses-permission android:name="android.permission.BLUETOOTH_ADMIN" android:maxSdkVersion="30" />
+    <uses-permission android:name="android.permission.BLUETOOTH_SCAN" android:usesPermissionFlags="neverForLocation" />
+    <uses-permission android:name="android.permission.BLUETOOTH_ADVERTISE" />
+    <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
+    <!-- BLE scans need it up to 11, the hotspot up to 12; 12 asks for coarse with fine. -->
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" android:maxSdkVersion="32" />
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" android:maxSdkVersion="32" />
+    <uses-permission android:name="android.permission.NEARBY_WIFI_DEVICES" android:usesPermissionFlags="neverForLocation" />
+    <uses-permission android:name="android.permission.CHANGE_WIFI_STATE" />
+    <uses-permission android:name="android.permission.CHANGE_NETWORK_STATE" />
+    <uses-feature android:name="android.hardware.bluetooth_le" android:required="false" />
     <application
         android:requestLegacyExternalStorage="true"
         android:label="uft"
