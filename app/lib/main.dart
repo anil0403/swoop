@@ -244,7 +244,9 @@ class HomeState extends State<Home> {
 
   Future<void> start() async {
     try {
-      final config = await getApplicationSupportDirectory();
+      // Windows: %APPDATA%\uft, the swoop CLI's.
+      final appData = Platform.isWindows ? Platform.environment['APPDATA'] : null;
+      final config = appData != null ? Directory('$appData\\uft') : await getApplicationSupportDirectory();
       final String d, name;
       if (Platform.isAndroid) {
         // Locks left by a transfer from before the app was reopened; one still running takes them again.
@@ -253,7 +255,7 @@ class HomeState extends State<Home> {
         (d, name) = (info['downloads']!, info['name']!);
       } else {
         final downloads = await getDownloadsDirectory() ?? await getApplicationDocumentsDirectory();
-        (d, name) = ('${downloads.path}/Swoop', Platform.localHostname);
+        (d, name) = ('${downloads.path}${Platform.pathSeparator}Swoop', Platform.localHostname);
       }
       final m = await uft.init(configDir: config.path, name: name);
       savedDir = File('${config.path}/save_dir');
