@@ -246,7 +246,9 @@ class HomeState extends State<Home> {
     try {
       // Windows: %APPDATA%\uft, the swoop CLI's.
       final appData = Platform.isWindows ? Platform.environment['APPDATA'] : null;
-      final config = appData != null ? Directory('$appData\\uft') : await getApplicationSupportDirectory();
+      final config = appData != null
+          ? Directory('$appData\\uft')
+          : await getApplicationSupportDirectory();
       final String d, name;
       if (Platform.isAndroid) {
         // Locks left by a transfer from before the app was reopened; one still running takes them again.
@@ -678,7 +680,9 @@ class HomeState extends State<Home> {
 
   /// "file.txt", "folder" or "3 items".
   String describe(List<uft.Pick> picks) {
-    final first = (picks.first.name ?? picks.first.path).split('/');
+    final first = (picks.first.name ?? picks.first.path).split(
+      Platform.isWindows ? RegExp(r'[\\/]') : '/',
+    );
     return picks.length == 1 || picks.every((x) => x.name?.startsWith('${first[0]}/') ?? false)
         ? (picks.length == 1 ? first.last : first[0])
         : '${picks.length} items';
@@ -944,8 +948,10 @@ class HomeState extends State<Home> {
 
   String short(String d) {
     if (Platform.isAndroid) return d.replaceFirst('/storage/emulated/0/', '');
-    final home = Platform.environment['HOME'];
-    return home != null && d.startsWith('$home/') ? '~${d.substring(home.length)}' : d;
+    final home = Platform.environment[Platform.isWindows ? 'USERPROFILE' : 'HOME'];
+    return home != null && d.startsWith('$home${Platform.pathSeparator}')
+        ? '~${d.substring(home.length)}'
+        : d;
   }
 
   @override
