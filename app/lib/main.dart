@@ -16,6 +16,8 @@ import 'direct.dart' as direct;
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await RustLib.init();
+  // Android: drawn under the navigation bar too; SafeArea keeps the content clear of it.
+  SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
   runApp(const App());
 }
 
@@ -232,6 +234,8 @@ class HomeState extends State<Home> {
       final config = await getApplicationSupportDirectory();
       final String d, name;
       if (Platform.isAndroid) {
+        // Locks left by a transfer from before the app was reopened; one still running takes them again.
+        android.invokeMethod('busy', false);
         final info = (await android.invokeMapMethod<String, String>('info'))!;
         (d, name) = (info['downloads']!, info['name']!);
       } else {
@@ -363,16 +367,16 @@ class HomeState extends State<Home> {
         )..done = e.resumed;
         setState(() => transfers.insert(0, incoming[e.session] = t));
       case uft.Incoming_Progress():
-        final t = incoming[e.session];
-        if (t != null) {
-          setState(() {
-            t.done = e.done;
-            t.total = e.total;
-            t.speed = e.speed;
-            if (e.speed > t.peak) t.peak = e.speed;
-            t.eta = e.eta;
-          });
-        }
+        // One that started before the app was reopened (Android keeps it going when swiped away).
+        final t = incoming[e.session] ??= Transfer('Incoming transfer', sending: false);
+        setState(() {
+          if (!transfers.contains(t)) transfers.insert(0, t);
+          t.done = e.done;
+          t.total = e.total;
+          t.speed = e.speed;
+          if (e.speed > t.peak) t.peak = e.speed;
+          t.eta = e.eta;
+        });
       case uft.Incoming_Done():
         if (e.session == joinedSession) leaveDirect();
         final t = incoming.remove(e.session);
@@ -762,10 +766,12 @@ class HomeState extends State<Home> {
     return p;
   }
 
-  /// "~/Downloads/Swoop" rather than the full home path.
+  /// "~/Downloads/Swoop" or "Download/Swoop" rather than the full path.
   String get shortDir {
+    final d = dir!;
+    if (Platform.isAndroid) return d.replaceFirst('/storage/emulated/0/', '');
     final home = Platform.environment['HOME'];
-    return home != null && dir!.startsWith('$home/') ? '~${dir!.substring(home.length)}' : dir!;
+    return home != null && d.startsWith('$home/') ? '~${d.substring(home.length)}' : d;
   }
 
   @override
@@ -876,62 +882,74 @@ class HomeState extends State<Home> {
       ),
       for (final t in transfers) Appear(key: ObjectKey(t), child: TransferCard(t)),
     ];
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Swoop'),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.add_link),
-            tooltip: 'Connect by address',
-            onPressed: me == null ? null : connectByAddress,
-          ),
-          const SizedBox(width: 8),
-        ],
+    return AnnotatedRegion(
+      value: SystemUiOverlayStyle(
+        systemNavigationBarColor: Colors.transparent,
+        systemNavigationBarContrastEnforced: false,
+        systemNavigationBarIconBrightness: theme.brightness == Brightness.dark
+            ? Brightness.light
+            : Brightness.dark,
       ),
-      body: dropZone(
-        theme,
-        SafeArea(
-          top: false,
-          child: LayoutBuilder(
-            builder: (context, box) {
-              // Two columns on a wide window: devices on the left, transfers on the right.
-              if (box.maxWidth >= 900) {
-                final side = (box.maxWidth - 1200).clamp(0, double.infinity) / 2 + 24;
-                return Column(
-                  children: [
-                    Padding(
-                      padding: EdgeInsets.fromLTRB(side, 8, side, 0),
-                      child: Column(children: top),
-                    ),
-                    Expanded(
-                      child: Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Expanded(
-                            child: ListView(
-                              padding: EdgeInsets.fromLTRB(side, 0, 12, 24),
-                              children: left,
-                            ),
-                          ),
-                          Expanded(
-                            child: ListView(
-                              padding: EdgeInsets.fromLTRB(12, 0, side, 24),
-                              children: [...right, if (transfers.isEmpty) hint(theme)],
-                            ),
-                          ),
-                        ],
+      child: Scaffold(
+        appBar: AppBar(
+          title: const Text('Swoop'),
+          actions: [
+            IconButton(
+              icon: const Icon(Icons.add_link),
+              tooltip: 'Connect by address',
+              onPressed: me == null ? null : connectByAddress,
+            ),
+            const SizedBox(width: 8),
+          ],
+        ),
+        body: dropZone(
+          theme,
+          // The bottom inset is list padding, so cards scroll under the navigation bar.
+          SafeArea(
+            top: false,
+            bottom: false,
+            child: LayoutBuilder(
+              builder: (context, box) {
+                final bottom = MediaQuery.paddingOf(context).bottom + 24;
+                // Two columns on a wide window: devices on the left, transfers on the right.
+                if (box.maxWidth >= 900) {
+                  final side = (box.maxWidth - 1200).clamp(0, double.infinity) / 2 + 24;
+                  return Column(
+                    children: [
+                      Padding(
+                        padding: EdgeInsets.fromLTRB(side, 8, side, 0),
+                        child: Column(children: top),
                       ),
-                    ),
-                  ],
+                      Expanded(
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Expanded(
+                              child: ListView(
+                                padding: EdgeInsets.fromLTRB(side, 0, 12, bottom),
+                                children: left,
+                              ),
+                            ),
+                            Expanded(
+                              child: ListView(
+                                padding: EdgeInsets.fromLTRB(12, 0, side, bottom),
+                                children: [...right, if (transfers.isEmpty) hint(theme)],
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  );
+                }
+                // One column, kept readable on a medium window.
+                final side = (box.maxWidth - 640).clamp(0, double.infinity) / 2 + 16;
+                return ListView(
+                  padding: EdgeInsets.fromLTRB(side, 8, side, bottom),
+                  children: [...top, ...left, if (transfers.isNotEmpty) ...right],
                 );
-              }
-              // One column, kept readable on a medium window.
-              final side = (box.maxWidth - 640).clamp(0, double.infinity) / 2 + 16;
-              return ListView(
-                padding: EdgeInsets.fromLTRB(side, 8, side, 24),
-                children: [...top, ...left, if (transfers.isNotEmpty) ...right],
-              );
-            },
+              },
+            ),
           ),
         ),
       ),

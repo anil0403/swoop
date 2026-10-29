@@ -321,8 +321,22 @@ pub fn receive(dir: String, sink: StreamSink<Incoming>) {
     into_sink(sink, |sink| start_receive(dir, sink))
 }
 
+/// Where incoming events go. A reopened app takes over the running receiver: on Android the process
+/// outlives the window when a transfer keeps it alive, and the port is still bound.
+static RECV_SINK: Mutex<Option<StreamSink<Incoming>>> = Mutex::new(None);
+
+fn to_app(ev: Incoming) {
+    if let Some(s) = RECV_SINK.lock().unwrap().as_ref() {
+        let _ = s.add(ev);
+    }
+}
+
 fn start_receive(dir: String, sink: StreamSink<Incoming>) -> Result<(), String> {
     let st = state()?;
+    if let Some(old) = RECV_SINK.lock().unwrap().as_mut() {
+        *old = sink;
+        return Ok(());
+    }
     let port_err =
         |e: std::io::Error| format!("port {DEFAULT_PORT} is busy ({e}); is Swoop already running?");
     let listener = TcpListener::bind((Ipv4Addr::UNSPECIFIED, DEFAULT_PORT)).map_err(port_err)?;
@@ -341,8 +355,12 @@ fn start_receive(dir: String, sink: StreamSink<Incoming>) -> Result<(), String> 
         })
     });
 
-    let asks = sink.clone();
-    let accept: recv::Accept = Arc::new(move |o: &Offer| ask(o, &asks));
+    *RECV_SINK.lock().unwrap() = Some(sink);
+    // Cloned out so the lock isn't held while the user decides.
+    let accept: recv::Accept = Arc::new(move |o: &Offer| {
+        let sink = RECV_SINK.lock().unwrap().clone();
+        sink.is_some_and(|s| ask(o, &s))
+    });
     let opts = RecvOptions {
         dir: dir.into(),
         null_sink: false,
@@ -353,7 +371,7 @@ fn start_receive(dir: String, sink: StreamSink<Incoming>) -> Result<(), String> 
     let id = st.id.clone();
     thread::spawn(move || {
         recv::serve(listener, id, opts, move |ev| {
-            let _ = sink.add(incoming(ev, &meters));
+            to_app(incoming(ev, &meters));
         })
     });
     Ok(())
