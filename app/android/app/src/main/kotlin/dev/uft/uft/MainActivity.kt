@@ -29,11 +29,7 @@ import java.io.File
 class MainActivity : FlutterActivity() {
     private val pick = 1
     private var picking: Pair<MethodChannel.Result, Boolean>? = null
-    /** Picked files handed to Rust as /proc/self/fd/N, open until the send ends. */
-    private val fds = HashMap<String, ParcelFileDescriptor>()
     private var multicast: WifiManager.MulticastLock? = null
-    private var wifiLocks: List<WifiManager.WifiLock> = emptyList()
-    private var wake: PowerManager.WakeLock? = null
     private var network: ConnectivityManager.NetworkCallback? = null
     private val direct by lazy { Direct(applicationContext, ::localBinding) }
     private var channel: MethodChannel? = null
@@ -74,13 +70,20 @@ class MainActivity : FlutterActivity() {
     }
 
     override fun onDestroy() {
-        busy(false)
+        // Swiped away mid-transfer: the Rust threads carry on as long as the process lives, so keep what they
+        // need (descriptors, locks, the foreground service).
+        // ponytail: the Flutter engine dies here and isn't kept: new offers need the app reopened, and the
+        // service and locks stay until then (the wake lock times out after 6 h). Direct-link transfers end
+        // here too, as direct.close() drops the hotspot.
+        val transferring = wake != null
+        if (!transferring) {
+            busy(false)
+            synchronized(fds) { fds.values.forEach { it.close() } }
+        }
         direct.close()
         multicast?.release()
         network?.let { getSystemService(ConnectivityManager::class.java).unregisterNetworkCallback(it) }
-        fds.values.forEach { it.close() }
-        // ponytail: closing the app ends running transfers; keep the service up until they finish if that bites.
-        if (isFinishing) stopService(Intent(this, TransferService::class.java))
+        if (isFinishing && !transferring) stopService(Intent(this, TransferService::class.java))
         super.onDestroy()
     }
 
@@ -330,5 +333,13 @@ class MainActivity : FlutterActivity() {
         }
         walk(rootId, name(DocumentsContract.buildDocumentUriUsingTree(root, rootId)))
         return out
+    }
+
+    /** Per process, not per activity: a transfer outlives the activity when the app is swiped away. */
+    companion object {
+        /** Picked files handed to Rust as /proc/self/fd/N, open until the send ends. */
+        private val fds = HashMap<String, ParcelFileDescriptor>()
+        private var wifiLocks: List<WifiManager.WifiLock> = emptyList()
+        private var wake: PowerManager.WakeLock? = null
     }
 }

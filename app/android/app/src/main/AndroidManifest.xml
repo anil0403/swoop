@@ -64,9 +64,11 @@
                 <data android:scheme="swoop"/>
             </intent-filter>
         </activity>
+        <!-- stopWithTask false: a transfer running when the app is swiped away keeps going (MainActivity.onDestroy). -->
         <service
             android:name=".TransferService"
             android:exported="false"
+            android:stopWithTask="false"
             android:foregroundServiceType="dataSync" />
         <!-- Don't delete the meta-data below.
              This is used by the Flutter tool to generate GeneratedPluginRegistrant.java -->
