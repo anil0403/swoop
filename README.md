@@ -1,3 +1,5 @@
+<p align="center"><img src="assets/logo.svg" width="128" alt="Swoop logo"></p>
+
 # Swoop
 
 Offline, zero-config file transfer between Linux and Android at the full speed of your local link (Wi-Fi, Ethernet, hotspot or Wi-Fi Direct). No internet, no accounts.

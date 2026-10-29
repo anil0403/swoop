@@ -892,7 +892,16 @@ class HomeState extends State<Home> {
       ),
       child: Scaffold(
         appBar: AppBar(
-          title: const Text('Swoop'),
+          title: Row(
+            children: [
+              ClipRRect(
+                borderRadius: BorderRadius.circular(8),
+                child: Image.asset('assets/logo.png', width: 32, height: 32),
+              ),
+              const SizedBox(width: 12),
+              const Text('Swoop'),
+            ],
+          ),
           actions: [
             IconButton(
               icon: const Icon(Icons.add_link),
