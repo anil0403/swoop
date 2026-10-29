@@ -3,7 +3,6 @@
 use std::collections::HashMap;
 use std::fs::{self, OpenOptions};
 use std::io::{self, Write};
-use std::os::unix::fs::OpenOptionsExt;
 use std::path::{Path, PathBuf};
 
 /// 6-digit code like `"482 913"` for one connection, from both certs and a nonce from each side.
@@ -98,11 +97,12 @@ impl Trust {
             fs::create_dir_all(dir)?;
         }
         let name = name.replace(['\n', '\r'], " ");
-        OpenOptions::new()
-            .append(true)
-            .create(true)
-            .mode(0o600)
-            .open(&self.path)?
+        let mut opts = OpenOptions::new();
+        opts.append(true).create(true);
+        // Windows: the config folder (%APPDATA%) is already the user's alone.
+        #[cfg(unix)]
+        std::os::unix::fs::OpenOptionsExt::mode(&mut opts, 0o600);
+        opts.open(&self.path)?
             .write_all(format!("{fp} {name}\n").as_bytes())?;
         self.fps.insert(fp.to_owned(), name);
         Ok(())
@@ -133,7 +133,6 @@ fn is_fp(s: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::os::unix::fs::PermissionsExt;
 
     #[test]
     fn code_is_six_digits_per_connection() {
@@ -167,8 +166,10 @@ mod tests {
         let path = dir.join("trusted");
         let text = fs::read_to_string(&path).unwrap();
         assert_eq!(text.lines().count(), 2);
+        #[cfg(unix)]
         assert_eq!(
-            fs::metadata(&path).unwrap().permissions().mode() & 0o777,
+            std::os::unix::fs::PermissionsExt::mode(&fs::metadata(&path).unwrap().permissions())
+                & 0o777,
             0o600
         );
 

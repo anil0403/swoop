@@ -392,16 +392,17 @@ fn read_chunks(job: &Job, tx: SyncSender<Chunk>, pool: Receiver<Vec<u8>>) -> io:
 /// Opens a file to send. `/proc/self/fd/N` is duplicated, not reopened: Android hands picked files over
 /// as descriptors the app may have no right to reopen by path.
 fn open_src(path: &Path) -> io::Result<File> {
-    let fd = path
+    #[cfg(unix)]
+    if let Some(fd) = path
         .to_str()
-        .and_then(|p| p.strip_prefix("/proc/self/fd/")?.parse().ok());
-    match fd {
+        .and_then(|p| p.strip_prefix("/proc/self/fd/")?.parse().ok())
+    {
         // SAFETY: only dup()ed here; a closed or bogus number fails with EBADF.
-        Some(fd) => Ok(unsafe { std::os::fd::BorrowedFd::borrow_raw(fd) }
+        return Ok(unsafe { std::os::fd::BorrowedFd::borrow_raw(fd) }
             .try_clone_to_owned()?
-            .into()),
-        None => File::open(path),
+            .into());
     }
+    File::open(path)
 }
 
 /// Modification time in whole seconds since the Unix epoch (negative before it); 0 when unknown.
