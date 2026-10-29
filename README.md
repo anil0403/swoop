@@ -133,7 +133,8 @@ Check any install with `swoop version`.
 2. **Send.** Tap the other device and pick files or a folder. On Linux you can also drop files onto the window;
    on Android, use **Share → Swoop** from any app. The first time you send to a device, Swoop shows its pairing
    code and sends nothing until you tap **Send**. After that the device is known and marked with a check. If
-   another device shows up with the same name, it's flagged as *not the one you sent to before*.
+   another device shows up with the same name, it's flagged as *not the one you sent to before*. Tap the check
+   (or long-press the device) to forget it.
 3. **Accept.** The first time, both screens show the same 6-digit code. Check it matches and tap **Accept**, or
    **Always accept** to trust that device from now on. The code is new every time, so a code that doesn't match
    means someone else is answering: tap **Decline**. A device on Swoop 2.6.1 or older can't pair anymore,
@@ -176,6 +177,7 @@ swoop bench --size 4G               # measure this machine's engine speed
 the same pairing code; answer `a` to always trust that device. The first `send` to a device asks you to check
 its code too. A name that several devices answer to, or that now belongs to a different device, is refused.
 Give the fingerprint or `swoop://` link instead, which also skips the question (useful in scripts).
+`swoop forget NAME` forgets a device you sent to or trusted.
 
 ## Build from source
 
