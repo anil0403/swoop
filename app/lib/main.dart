@@ -8,6 +8,8 @@ import 'package:path_provider/path_provider.dart';
 import 'package:uft/src/rust/api/uft.dart' as uft;
 import 'package:uft/src/rust/frb_generated.dart';
 
+import 'direct.dart' as direct;
+
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await RustLib.init();
@@ -33,6 +35,9 @@ class Transfer {
   int done = 0, total;
   double speed = 0, peak = 0;
   double? eta;
+
+  /// What it's waiting for, before bytes move.
+  String? note;
   String? result;
   bool failed = false;
 }
@@ -79,6 +84,18 @@ class HomeState extends State<Home> {
   bool scanning = false, busy = false;
   Timer? rescan;
 
+  /// Seen over Bluetooth, by fingerprint prefix; those not also on this network get the direct link.
+  final ble = <String, direct.BlePeer>{};
+  String? bleError;
+
+  /// Senders whose invite this device accepted: their offer needs no second tap.
+  final invited = <String>{};
+
+  /// The sender this device joined a hotspot for, and its transfer; the network is left when it ends.
+  String? joinedFor;
+  int? joinedSession;
+  Timer? leaveTimer;
+
   @override
   void initState() {
     super.initState();
@@ -109,6 +126,7 @@ class HomeState extends State<Home> {
       });
       uft.receive(dir: d).listen(onIncoming, onError: (Object e) => setState(() => error = '$e'));
       scan();
+      startBle();
     } catch (e) {
       setState(() => error = '$e');
     }
@@ -132,20 +150,45 @@ class HomeState extends State<Home> {
           onError: (Object e) => setState(() => error = '$e'),
           onDone: () {
             if (!mounted) return;
+            final stale = DateTime.now().subtract(const Duration(seconds: 15));
             setState(() {
               peers = latest;
               scanning = false;
+              ble.removeWhere((_, b) => b.seen.isBefore(stale));
             });
+            // Bluetooth turned on or permission granted since: try again.
+            if (bleError != null) startBle();
             rescan = Timer(const Duration(seconds: 4), scan);
           },
         );
   }
 
+  void startBle() {
+    bleError = null;
+    direct.bleStart(
+      me!.fingerprint.substring(0, 16),
+      me!.name,
+      // Keeps the name when an advertisement comes without one.
+      seen: (b) => setState(
+        () => ble[b.fp] = b.name.isEmpty && ble[b.fp] != null ? (ble[b.fp]!..seen = b.seen) : b,
+      ),
+      invite: onInvite,
+      failed: (e) => setState(() => bleError = e),
+    );
+  }
+
   void onIncoming(uft.Incoming e) {
     switch (e) {
       case uft.Incoming_Offer():
-        offer(e);
+        // Accepted with the invite already; TLS proves it's from the device that sent it.
+        invited.remove(e.fingerprint)
+            ? uft.answer(id: e.id, accept: true, always: false)
+            : offer(e);
       case uft.Incoming_Started():
+        if (e.fingerprint == joinedFor) {
+          joinedSession = e.session;
+          leaveTimer?.cancel();
+        }
         final t = Transfer(
           'From ${e.peerName} · ${e.files} file${e.files == 1 ? '' : 's'}',
           total: e.total,
@@ -163,6 +206,7 @@ class HomeState extends State<Home> {
           });
         }
       case uft.Incoming_Done():
+        if (e.session == joinedSession) leaveDirect();
         final t = incoming.remove(e.session);
         if (t != null) {
           setState(() {
@@ -171,6 +215,7 @@ class HomeState extends State<Home> {
           });
         }
       case uft.Incoming_Failed():
+        if (e.session == joinedSession) leaveDirect();
         final t = incoming.remove(e.session);
         if (t != null) {
           setState(
@@ -220,13 +265,19 @@ class HomeState extends State<Home> {
   }
 
   Future<void> pick(uft.Peer p) async {
+    final picks = await choose('Send to ${p.name} · code ${p.code}');
+    if (picks.isNotEmpty) send(p, picks);
+  }
+
+  /// Files or a folder, from the platform's picker.
+  Future<List<uft.Pick>> choose(String title) async {
     final folder = await showModalBottomSheet<bool>(
       context: context,
       builder: (context) => SafeArea(
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            ListTile(title: Text('Send to ${p.name} · code ${p.code}')),
+            ListTile(title: Text(title)),
             ListTile(
               leading: const Icon(Icons.description),
               title: const Text('Files'),
@@ -241,19 +292,16 @@ class HomeState extends State<Home> {
         ),
       ),
     );
-    if (folder == null) return;
-    final List<uft.Pick> picks;
+    if (folder == null) return [];
     if (Platform.isAndroid) {
       // [fd path, name] pairs; the descriptors stay open until the send ends.
       final got = await android.invokeListMethod<List<Object?>>('pick', folder) ?? [];
-      picks = [for (final x in got) uft.Pick(path: x[0] as String, name: x[1] as String)];
-    } else {
-      final paths = folder
-          ? [?await getDirectoryPath()]
-          : (await openFiles()).map((f) => f.path).toList();
-      picks = [for (final x in paths) uft.Pick(path: x)];
+      return [for (final x in got) uft.Pick(path: x[0] as String, name: x[1] as String)];
     }
-    if (picks.isNotEmpty) send(p, picks);
+    final paths = folder
+        ? [?await getDirectoryPath()]
+        : (await openFiles()).map((f) => f.path).toList();
+    return [for (final x in paths) uft.Pick(path: x)];
   }
 
   /// Tells Android while something transfers, so it keeps the CPU and Wi-Fi at full speed.
@@ -263,20 +311,28 @@ class HomeState extends State<Home> {
     busy = now;
   }
 
-  void send(uft.Peer p, List<uft.Pick> picks) {
+  /// "file.txt", "folder" or "3 items".
+  String describe(List<uft.Pick> picks) {
     final first = (picks.first.name ?? picks.first.path).split('/');
-    final what =
-        picks.length == 1 || picks.every((x) => x.name?.startsWith('${first[0]}/') ?? false)
+    return picks.length == 1 || picks.every((x) => x.name?.startsWith('${first[0]}/') ?? false)
         ? (picks.length == 1 ? first.last : first[0])
         : '${picks.length} items';
-    final t = Transfer('To ${p.name} · $what');
-    setState(() => transfers.insert(0, t));
+  }
+
+  void release(List<uft.Pick> picks) {
+    if (Platform.isAndroid) android.invokeMethod('release', [for (final x in picks) x.path]);
+  }
+
+  /// Sends into `card` if given (a direct link set up first), then calls `after`.
+  void send(uft.Peer p, List<uft.Pick> picks, {Transfer? card, void Function()? after}) {
+    final t = card ?? Transfer('To ${p.name} · ${describe(picks)}');
+    t.note = null;
+    if (card == null) setState(() => transfers.insert(0, t));
     updateBusy();
     void end() {
       updateBusy();
-      if (Platform.isAndroid) {
-        android.invokeMethod('release', [for (final x in picks) x.path]);
-      }
+      release(picks);
+      after?.call();
     }
 
     uft
@@ -311,6 +367,86 @@ class HomeState extends State<Home> {
               ..result = '$e',
           ),
         );
+  }
+
+  /// To a device seen only over Bluetooth: host a hotspot, invite it over Bluetooth, wait until it's on the hotspot,
+  /// send, take the hotspot down.
+  Future<void> sendDirect(direct.BlePeer b) async {
+    final picks = await choose('Send to ${b.name} · direct Wi-Fi link');
+    if (picks.isEmpty) return;
+    final t = Transfer('To ${b.name} · ${describe(picks)}')..note = 'Starting a hotspot…';
+    setState(() => transfers.insert(0, t));
+    updateBusy();
+    var hosting = false;
+    try {
+      final wifi = await direct.host();
+      hosting = true;
+      // Linux peers may ask to pair first (BlueZ reads PipeWire's MIDI service on connect).
+      setState(
+        () => t.note =
+            'Inviting ${b.name} over Bluetooth…${Platform.isLinux ? ' Accept a pairing request if one shows up.' : ''}',
+      );
+      await direct.bleInvite(b.id, direct.Invite(wifi, me!.fingerprint, me!.name).toJson());
+      setState(() => t.note = 'Waiting for ${b.name} to accept and join ${wifi.ssid}…');
+      // The receiver taps once or twice (Android 10+ adds a system dialog), then joins; the scan finds it.
+      final until = DateTime.now().add(const Duration(minutes: 2));
+      uft.Peer? p;
+      while ((p = peers.where((x) => x.fingerprint.startsWith(b.fp)).firstOrNull) == null) {
+        if (DateTime.now().isAfter(until)) throw '${b.name} did not join the hotspot';
+        await Future<void>.delayed(const Duration(seconds: 1));
+      }
+      send(p!, picks, card: t, after: direct.stopHost);
+    } catch (e) {
+      if (hosting) direct.stopHost();
+      release(picks);
+      setState(
+        () => t
+          ..failed = true
+          ..note = null
+          ..result = '$e',
+      );
+      updateBusy();
+    }
+  }
+
+  /// A sender with no shared network asks this device to join its hotspot; accepting also accepts its files.
+  Future<void> onInvite(String json) async {
+    final inv = direct.Invite.parse(json);
+    if (inv == null || joinedFor != null || !mounted) return;
+    final ok = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => AlertDialog(
+        title: Text('${inv.name} wants to send you files'),
+        content: Text(
+          "You're not on the same network, so this device joins ${inv.name}'s hotspot (${inv.wifi.ssid}) "
+          'for the transfer and goes back afterwards.',
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Decline')),
+          FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('Accept')),
+        ],
+      ),
+    );
+    if (ok != true) return;
+    joinedFor = inv.fp;
+    invited.add(inv.fp);
+    try {
+      await direct.join(inv.wifi);
+      // Back to the usual network if the transfer never starts.
+      leaveTimer = Timer(const Duration(minutes: 2), leaveDirect);
+    } catch (e) {
+      invited.remove(inv.fp);
+      joinedFor = null;
+      setState(() => error = "Couldn't join ${inv.name}'s hotspot: $e");
+    }
+  }
+
+  void leaveDirect() {
+    leaveTimer?.cancel();
+    if (joinedFor != null) invited.remove(joinedFor);
+    joinedFor = joinedSession = null;
+    direct.leave();
   }
 
   /// For networks where scanning can't reach: shows this device's links, takes the other one's.
@@ -417,6 +553,26 @@ class HomeState extends State<Home> {
                 onTap: () => pick(p),
               ),
             ),
+          for (final b in ble.values.where(
+            (b) => ![...peers, ...manual].any((p) => p.fingerprint.startsWith(b.fp)),
+          ))
+            Card(
+              child: ListTile(
+                leading: const Icon(Icons.bluetooth),
+                title: Text(b.name.isEmpty ? 'uft device' : b.name),
+                subtitle: const Text('Not on this network · sends over a direct Wi-Fi link'),
+                trailing: const Icon(Icons.send),
+                onTap: () => sendDirect(b),
+              ),
+            ),
+          if (bleError != null)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 8),
+              child: Text(
+                'Bluetooth: $bleError. Devices on other networks only show up with Bluetooth on.',
+                style: theme.textTheme.bodySmall,
+              ),
+            ),
           if (transfers.isNotEmpty) ...[
             const SizedBox(height: 16),
             Text('Transfers', style: theme.textTheme.titleMedium),
@@ -450,7 +606,9 @@ class TransferCard extends StatelessWidget {
             ),
             const SizedBox(height: 8),
             Text(
-              running
+              t.note != null
+                  ? t.note!
+                  : running
                   ? '${frac == null ? '' : '${(frac * 100).toStringAsFixed(1)}%  '}'
                         '${size(t.done)} / ${size(t.total)}  ${speed(t.speed)}  peak ${speed(t.peak)}'
                         '${t.eta == null ? '' : '  ETA ${duration(t.eta!)}'}'
