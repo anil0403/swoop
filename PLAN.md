@@ -140,12 +140,13 @@ BLE contract (both platforms):
 - ponytail: Wi-Fi credentials go over BLE unencrypted; they only open a short-lived hotspot, and the transfer itself is
   pinned TLS with the code shown on both sides. Encrypt the invite (fingerprint-derived key) if that ever matters.
 
-- [ ] 5.1 Linux platform side (`app/rust/src/api/direct.rs`, BlueZ via `bluer`, NetworkManager via `nmcli`).
-- [ ] 5.2 Android platform side (`MainActivity.kt` + `Direct.kt`): BLE advertise/scan/GATT, LocalOnlyHotspot, join
+- [x] 5.1 Linux platform side (`app/rust/src/api/direct.rs`, BlueZ via `bluer`, NetworkManager via `nmcli`; hosting needs
+  `dnsmasq`, `iw` picks an allowed 5 GHz channel). Two Linux peers get a BlueZ pairing prompt (PipeWire's MIDI service).
+- [x] 5.2 Android platform side (`MainActivity.kt` + `Direct.kt`): BLE advertise/scan/GATT, LocalOnlyHotspot, join
   (`WifiNetworkSpecifier` on 10+, `addNetwork` on 8–9), permissions.
-- [ ] 5.3 App flow (`app/lib`): BLE-only devices in the list, host → invite → wait → send → tear down; invite dialog.
-- [ ] 5.4 Tests: Linux↔Linux on virtual radios (mac80211_hwsim, virtual BLE controllers); Android↔Android on two emulators;
-  real devices (all 4 pairings) with no router.
+- [x] 5.3 App flow (`app/lib`): BLE-only devices in the list, host → invite → wait → send → tear down; invite dialog.
+- [ ] 5.4 Tests: Linux↔Linux on virtual radios ✅ (`app/test-direct-linux.sh`); Android↔Android on two API 37 emulators:
+  BLE + invite + hotspot ✅, join stops at the system dialog (untapped); real devices (all 4 pairings) with no router pending.
 - [ ] 5.5 Later: Wi-Fi Direct (when neither side can host), the receiver hosting when the sender can't, 5/6 GHz band choice
   from link info, QR code instead of BLE for devices without Bluetooth.
 
