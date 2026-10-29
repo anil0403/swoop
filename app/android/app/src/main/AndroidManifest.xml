@@ -24,6 +24,7 @@
     <uses-feature android:name="android.hardware.bluetooth_le" android:required="false" />
     <application
         android:requestLegacyExternalStorage="true"
+        android:allowBackup="false"
         android:label="Swoop"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">

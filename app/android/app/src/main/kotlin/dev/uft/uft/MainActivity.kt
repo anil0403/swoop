@@ -2,6 +2,7 @@ package dev.uft.uft
 
 import android.Manifest
 import android.app.DownloadManager
+import android.content.ContentResolver
 import android.content.Intent
 import android.media.MediaScannerConnection
 import android.net.ConnectivityManager
@@ -336,11 +337,14 @@ class MainActivity : FlutterActivity() {
     @Suppress("DEPRECATION") // the typed getters are API 33+
     private fun stash(i: Intent) {
         when (i.action) {
-            Intent.ACTION_SEND -> i.getParcelableExtra<Uri>(Intent.EXTRA_STREAM)?.let { shared += it }
-            Intent.ACTION_SEND_MULTIPLE -> i.getParcelableArrayListExtra<Uri>(Intent.EXTRA_STREAM)?.let { shared += it }
+            // content:// only: a file:// share would be opened with Swoop's own access, its key included.
+            Intent.ACTION_SEND -> i.getParcelableExtra<Uri>(Intent.EXTRA_STREAM)?.let { shared += listOf(it).filter(::content) }
+            Intent.ACTION_SEND_MULTIPLE -> i.getParcelableArrayListExtra<Uri>(Intent.EXTRA_STREAM)?.let { shared += it.filter(::content) }
             Intent.ACTION_VIEW -> if (i.data?.scheme == "swoop") openedLink = i.dataString
         }
     }
+
+    private fun content(uri: Uri) = uri.scheme == ContentResolver.SCHEME_CONTENT
 
     /** Off the UI thread: a big folder or many shares means many queries. */
     private fun background(result: MethodChannel.Result, work: () -> Any?) {
