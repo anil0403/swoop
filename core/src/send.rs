@@ -48,9 +48,14 @@ pub struct SendOptions {
     /// Gets the pairing code once connected, to show while the receiver decides. Not called
     /// for a receiver that predates per-connection codes.
     pub on_code: Option<OnCode>,
+    /// For a receiver this device doesn't know yet: gets the pairing code (None from a
+    /// receiver that predates them) and returns Ok only once the user saw it on both screens.
+    /// Nothing is sent before.
+    pub confirm: Option<Confirm>,
 }
 
 pub type OnCode = Box<dyn Fn(&str) + Send + Sync>;
+pub type Confirm = Box<dyn Fn(Option<&str>) -> io::Result<()> + Send + Sync>;
 
 #[derive(Debug, Clone)]
 pub struct SendStats {
@@ -108,20 +113,19 @@ fn session(
     let mut ctrl = tls::connect(addr, cfg.clone())?;
     proto::write_msg(&mut ctrl, &hello(Role::Control))?;
     ctrl.flush()?;
-    match proto::read_msg(&mut ctrl)? {
+    let code = match proto::read_msg(&mut ctrl)? {
         Msg::Welcome {
             version: VERSION,
             nonce: theirs,
             ..
-        } => {
-            if let (Some(theirs), Some(on_code)) = (theirs, &opts.on_code) {
-                on_code(&pair::code(&id.fingerprint(), server_fp, &nonce, &theirs));
-            }
-        }
+        } => theirs.map(|t| pair::code(&id.fingerprint(), server_fp, &nonce, &t)),
         Msg::Welcome { version, .. } => {
             return Err(bad(&format!("receiver speaks protocol {version}")));
         }
         m => return Err(refused(m)),
+    };
+    if let (Some(c), Some(on_code)) = (&code, &opts.on_code) {
+        on_code(c);
     }
     proto::write_msg(
         &mut ctrl,
@@ -133,6 +137,10 @@ fn session(
         },
     )?;
     ctrl.flush()?;
+    // Offered first, so the receiver shows its code while this side's user checks it.
+    if let Some(confirm) = &opts.confirm {
+        confirm(code.as_deref())?;
+    }
     // The receiver may be asking its user.
     ctrl.sock.set_read_timeout(Some(Duration::from_secs(120)))?;
     let have = match proto::read_msg(&mut ctrl)? {

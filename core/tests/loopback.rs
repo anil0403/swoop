@@ -47,7 +47,31 @@ fn opts(streams: Streams) -> SendOptions {
         name: "tx".into(),
         cancel: None,
         on_code: None,
+        confirm: None,
     }
+}
+
+#[test]
+fn nothing_is_sent_until_the_code_is_confirmed() {
+    let dst = temp_dir("unconfirmed");
+    let (addr, fp) = receiver(&dst, false);
+    let src = [Source::Synthetic {
+        name: "x".into(),
+        size: 10,
+    }];
+    let o = SendOptions {
+        confirm: Some(Box::new(|code| {
+            assert!(code.is_some());
+            Err(std::io::Error::new(
+                std::io::ErrorKind::Interrupted,
+                "cancelled",
+            ))
+        })),
+        ..opts(Streams::Fixed(1))
+    };
+    let sender = Identity::generate().unwrap();
+    assert!(send::send(addr, &sender, &fp, &src, &o, |_, _| {}).is_err());
+    assert_eq!(fs::read_dir(&dst).unwrap().count(), 0);
 }
 
 #[test]

@@ -1,6 +1,6 @@
 use std::error::Error;
 use std::ffi::OsString;
-use std::io::{IsTerminal, Write};
+use std::io::{self, IsTerminal, Write};
 use std::net::{IpAddr, Ipv4Addr, SocketAddr, TcpListener, ToSocketAddrs, UdpSocket};
 use std::path::PathBuf;
 use std::process::ExitCode;
@@ -260,7 +260,9 @@ fn identity() -> Res<Identity> {
 
 /// Finds DEVICE: a host with a given fingerprint as is, otherwise by a scan that matches the
 /// name, a fingerprint prefix or the host's address. Returns the best address, fingerprint, name.
-fn resolve(device: &str, fp: Option<String>) -> Res<(SocketAddr, String, String)> {
+/// Refuses a name that several devices answer to, or that now points to another device than
+/// the one in `known` (sent to before).
+fn resolve(device: &str, fp: Option<String>, known: &Trust) -> Res<(SocketAddr, String, String)> {
     if let Some(fp) = fp {
         let addr = with_port(device)
             .to_socket_addrs()?
@@ -287,18 +289,63 @@ fn resolve(device: &str, fp: Option<String>) -> Res<(SocketAddr, String, String)
         })
         .collect();
     let want = device.to_ascii_lowercase();
+    let by_name = |f: &Found| f.device.name.trim().eq_ignore_ascii_case(device.trim());
     let is_match = |f: &Found| {
-        f.device.name.eq_ignore_ascii_case(device)
+        by_name(f)
             || (want.len() >= 4 && f.device.fp.starts_with(&want))
             || f.addrs
                 .iter()
                 .any(|a| hosts.iter().any(|h| h.ip() == a.ip()))
     };
-    let found = discover::scan(port, Duration::from_secs(5), &v4, |f| is_match(f))?;
-    let f = found.iter().find(|f| is_match(f)).ok_or_else(|| {
+    // Stop early only for a device sent to before: a stranger may answer to the same name.
+    let found = discover::scan(port, Duration::from_secs(5), &v4, |f| {
+        is_match(f) && known.contains(&f.device.fp)
+    })?;
+    let hits: Vec<&Found> = found.iter().filter(|f| is_match(f)).collect();
+    let f = hits.first().ok_or_else(|| {
         format!("no device {device:?} found nearby; see `swoop scan`, or give HOST FINGERPRINT")
     })?;
+    if hits.iter().any(|h| h.device.fp != f.device.fp) {
+        return Err(format!(
+            "several devices answer to {device:?}; see `swoop scan` and give HOST FINGERPRINT"
+        )
+        .into());
+    }
+    if by_name(f) && !known.contains(&f.device.fp) && known.has_name(device) {
+        return Err(format!(
+            "{device:?} nearby isn't the one you sent to before; if it really is, give HOST FINGERPRINT"
+        )
+        .into());
+    }
     Ok((f.addrs[0], f.device.fp.clone(), f.device.name.clone()))
+}
+
+/// Before the first send to a receiver: asks on the terminal whether it shows the same code,
+/// and remembers it if so.
+fn confirm_send(code: Option<&str>, fp: &str, name: &str, known: &Mutex<Trust>) -> io::Result<()> {
+    let mut known = known.lock().unwrap();
+    if known.contains(fp) {
+        return Ok(());
+    }
+    let refuse = |why: String| Err(io::Error::new(io::ErrorKind::PermissionDenied, why));
+    let Some(code) = code else {
+        return refuse(format!("{name}'s Swoop is too old to pair with; update it"));
+    };
+    if !std::io::stdin().is_terminal() {
+        return refuse(format!(
+            "first send to {name}: confirm its pairing code in a terminal, or give HOST FINGERPRINT"
+        ));
+    }
+    eprint!("First send to {name}. Check that it shows pairing code {code}. Send? [y/N]: ");
+    let mut line = String::new();
+    let _ = std::io::stdin().read_line(&mut line);
+    if !matches!(line.trim().to_ascii_lowercase().as_str(), "y" | "yes") {
+        return Err(io::Error::new(io::ErrorKind::Interrupted, "cancelled"));
+    }
+    if let Err(e) = known.add(fp, name) {
+        eprintln!("swoop: could not remember {name}: {e}");
+    }
+    Ok(())
 }
 
 /// Asks on the terminal whether to accept an offer from a device that isn't trusted yet.
@@ -512,7 +559,10 @@ fn run(cmd: Cmd) -> Res<()> {
             streams,
         } => {
             let id = identity()?;
-            let (addr, fp, name) = resolve(&device, fp)?;
+            let known = Mutex::new(Trust::load_file(config()?.join("known"))?);
+            // A fingerprint given by hand was checked already; TLS pins it.
+            let checked = fp.is_some();
+            let (addr, fp, name) = resolve(&device, fp, &known.lock().unwrap())?;
             eprintln!("to {name} at {addr}");
             let sources: Vec<Source> = match synthetic {
                 Some(size) => vec![Source::Synthetic {
@@ -528,6 +578,10 @@ fn run(cmd: Cmd) -> Res<()> {
                 on_code: Some(Box::new(|code| {
                     eprintln!("pairing code {code} (the receiver shows it too if it asks)")
                 })),
+                confirm: (!checked).then(|| -> send::Confirm {
+                    let (fp, name) = (fp.clone(), name.clone());
+                    Box::new(move |code| confirm_send(code, &fp, &name, &known))
+                }),
             };
             let stats = send::send(addr, &id, &fp, &sources, &opts, print_status)?;
             eprintln!();
@@ -558,6 +612,7 @@ fn run(cmd: Cmd) -> Res<()> {
                 name: "bench-send".into(),
                 cancel: None,
                 on_code: None,
+                confirm: None,
             };
             let s = send::send(addr, &tx, &rx_fp, &sources, &opts, print_status)?;
             eprintln!();

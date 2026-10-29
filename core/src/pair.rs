@@ -1,6 +1,6 @@
 //! Pairing: a short code both devices show, and the list of trusted devices.
 
-use std::collections::HashSet;
+use std::collections::HashMap;
 use std::fs::{self, OpenOptions};
 use std::io::{self, Write};
 use std::os::unix::fs::OpenOptionsExt;
@@ -47,13 +47,18 @@ pub fn commit(nonce: &str) -> String {
 /// Fingerprints of trusted devices, kept in `dir/trusted` as `FINGERPRINT NAME` lines.
 pub struct Trust {
     path: PathBuf,
-    fps: HashSet<String>,
+    /// Fingerprint → the name it had when added.
+    fps: HashMap<String, String>,
 }
 
 impl Trust {
     /// Reads `dir/trusted`; a missing file is an empty store, malformed lines are skipped.
     pub fn load(dir: &Path) -> io::Result<Trust> {
-        let path = dir.join("trusted");
+        Trust::load_file(dir.join("trusted"))
+    }
+
+    /// Reads a store in the same format, e.g. `dir/known`: receivers this device sent to.
+    pub fn load_file(path: PathBuf) -> io::Result<Trust> {
         let text = match fs::read_to_string(&path) {
             Err(e) if e.kind() == io::ErrorKind::NotFound => String::new(),
             r => r?,
@@ -61,15 +66,21 @@ impl Trust {
         let fps = text
             .lines()
             .filter_map(|l| l.split_once(' '))
-            .map(|(fp, _)| fp)
-            .filter(|fp| is_fp(fp))
-            .map(str::to_owned)
+            .filter(|(fp, _)| is_fp(fp))
+            .map(|(fp, name)| (fp.to_owned(), name.to_owned()))
             .collect();
         Ok(Trust { path, fps })
     }
 
     pub fn contains(&self, fp: &str) -> bool {
-        self.fps.contains(fp)
+        self.fps.contains_key(fp)
+    }
+
+    /// Whether some device in here goes by `name` (ignoring case and outer spaces).
+    pub fn has_name(&self, name: &str) -> bool {
+        self.fps
+            .values()
+            .any(|n| n.trim().eq_ignore_ascii_case(name.trim()))
     }
 
     /// Trusts `fp` from now on (appends to the file, mode 0600); no-op if already trusted.
@@ -93,7 +104,7 @@ impl Trust {
             .mode(0o600)
             .open(&self.path)?
             .write_all(format!("{fp} {name}\n").as_bytes())?;
-        self.fps.insert(fp.to_owned());
+        self.fps.insert(fp.to_owned(), name);
         Ok(())
     }
 }
@@ -148,6 +159,7 @@ mod tests {
         fs::write(&path, format!("{text}garbage\n\nshort name\n")).unwrap();
         let t = Trust::load(&dir).unwrap();
         assert!(t.contains(&a) && t.contains(&b));
+        assert!(t.has_name(" MY PHONE") && !t.has_name("again"));
         assert_eq!(t.fps.len(), 2);
         fs::remove_dir_all(dir).unwrap();
     }
