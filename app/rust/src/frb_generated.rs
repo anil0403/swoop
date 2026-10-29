@@ -474,8 +474,10 @@ fn wire__crate__api__uft__receive_impl(
             >>::sse_decode(&mut deserializer);
             deserializer.end();
             move |context| {
-                transform_result_sse::<_, String>((move || {
-                    let output_ok = crate::api::uft::receive(api_dir, api_sink)?;
+                transform_result_sse::<_, ()>((move || {
+                    let output_ok = Ok::<_, ()>({
+                        crate::api::uft::receive(api_dir, api_sink);
+                    })?;
                     std::result::Result::Ok(output_ok)
                 })())
             }
@@ -511,8 +513,10 @@ fn wire__crate__api__uft__scan_impl(
             >>::sse_decode(&mut deserializer);
             deserializer.end();
             move |context| {
-                transform_result_sse::<_, String>((move || {
-                    let output_ok = crate::api::uft::scan(api_secs, api_sink)?;
+                transform_result_sse::<_, ()>((move || {
+                    let output_ok = Ok::<_, ()>({
+                        crate::api::uft::scan(api_secs, api_sink);
+                    })?;
                     std::result::Result::Ok(output_ok)
                 })())
             }
@@ -550,9 +554,10 @@ fn wire__crate__api__uft__send_files_impl(
             >>::sse_decode(&mut deserializer);
             deserializer.end();
             move |context| {
-                transform_result_sse::<_, String>((move || {
-                    let output_ok =
-                        crate::api::uft::send_files(api_id, api_peer, api_picks, api_sink)?;
+                transform_result_sse::<_, ()>((move || {
+                    let output_ok = Ok::<_, ()>({
+                        crate::api::uft::send_files(api_id, api_peer, api_picks, api_sink);
+                    })?;
                     std::result::Result::Ok(output_ok)
                 })())
             }

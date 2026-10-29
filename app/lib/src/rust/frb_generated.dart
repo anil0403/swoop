@@ -508,7 +508,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           },
           codec: SseCodec(
             decodeSuccessData: sse_decode_unit,
-            decodeErrorData: sse_decode_String,
+            decodeErrorData: null,
           ),
           constMeta: kCrateApiUftReceiveConstMeta,
           argValues: [dir, sink],
@@ -541,7 +541,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           },
           codec: SseCodec(
             decodeSuccessData: sse_decode_unit,
-            decodeErrorData: sse_decode_String,
+            decodeErrorData: null,
           ),
           constMeta: kCrateApiUftScanConstMeta,
           argValues: [secs, sink],
@@ -580,7 +580,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           },
           codec: SseCodec(
             decodeSuccessData: sse_decode_unit,
-            decodeErrorData: sse_decode_String,
+            decodeErrorData: null,
           ),
           constMeta: kCrateApiUftSendFilesConstMeta,
           argValues: [id, peer, picks, sink],

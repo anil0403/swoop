@@ -9,7 +9,7 @@ import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 import 'package:freezed_annotation/freezed_annotation.dart' hide protected;
 part 'uft.freezed.dart';
 
-// These functions are ignored because they are not marked as `pub`: `ask`, `dropped`, `find`, `incoming`, `local_link`, `peer`, `state`
+// These functions are ignored because they are not marked as `pub`: `ask`, `dropped`, `find`, `incoming`, `into_sink`, `local_link`, `peer`, `start_receive`, `start_scan`, `start_send`, `state`
 // These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `State`
 // These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `clone`, `clone`, `clone`, `fmt`, `fmt`, `fmt`
 

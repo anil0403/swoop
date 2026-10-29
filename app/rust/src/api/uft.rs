@@ -237,8 +237,23 @@ pub fn connect(target: String) -> Result<Peer, String> {
         .ok_or_else(|| format!("no Swoop device answered at {addr}; is it receiving?"))
 }
 
+/// A stream's start-up error goes into the stream, where the app listens; a returned error would
+/// reach Dart as an unhandled exception instead.
+fn into_sink<T: Clone + crate::frb_generated::SseEncode>(
+    sink: StreamSink<T>,
+    start: impl FnOnce(StreamSink<T>) -> Result<(), String>,
+) {
+    if let Err(e) = start(sink.clone()) {
+        let _ = sink.add_error(e);
+    }
+}
+
 /// Scans for `secs`, sending the whole list of other devices each time it changes.
-pub fn scan(secs: u32, sink: StreamSink<Vec<Peer>>) -> Result<(), String> {
+pub fn scan(secs: u32, sink: StreamSink<Vec<Peer>>) {
+    into_sink(sink, |sink| start_scan(secs, sink))
+}
+
+fn start_scan(secs: u32, sink: StreamSink<Vec<Peer>>) -> Result<(), String> {
     let me = state()?.fp.clone();
     thread::spawn(move || {
         let mut list: Vec<Peer> = Vec::new();
@@ -302,7 +317,11 @@ pub enum Incoming {
 }
 
 /// Receives into `dir` and makes this device discoverable, until the app exits.
-pub fn receive(dir: String, sink: StreamSink<Incoming>) -> Result<(), String> {
+pub fn receive(dir: String, sink: StreamSink<Incoming>) {
+    into_sink(sink, |sink| start_receive(dir, sink))
+}
+
+fn start_receive(dir: String, sink: StreamSink<Incoming>) -> Result<(), String> {
     let st = state()?;
     let port_err =
         |e: std::io::Error| format!("port {DEFAULT_PORT} is busy ({e}); is Swoop already running?");
@@ -500,7 +519,11 @@ pub struct Pick {
 /// Sends files and folders to `peer`; reports progress, then Done or Failed. `id` is the app's,
 /// for `cancel`. A dropped connection is retried for a while, on whichever path finds the
 /// receiver; the transfer resumes where it stopped.
-pub fn send_files(
+pub fn send_files(id: i64, peer: Peer, picks: Vec<Pick>, sink: StreamSink<Outgoing>) {
+    into_sink(sink, |sink| start_send(id, peer, picks, sink))
+}
+
+fn start_send(
     id: i64,
     peer: Peer,
     picks: Vec<Pick>,
