@@ -109,7 +109,12 @@ fn peer(f: &Found, me: &str) -> Peer {
         addr: f.addrs[0].to_string(),
         code: pair::code(me, &f.device.fp),
         link: f.device.link.as_ref().map(link::describe),
-        expected: f.device.link.as_ref().zip(local_link()).and_then(|(a, b)| link::expected(a, &b)),
+        expected: f
+            .device
+            .link
+            .as_ref()
+            .zip(local_link())
+            .and_then(|(a, b)| link::expected(a, &b)),
     }
 }
 
@@ -126,7 +131,15 @@ fn local_link() -> Option<Link> {
 #[flutter_rust_bridge::frb(sync)]
 pub fn set_link(kind: Option<String>, mhz: Option<u32>, mbps: Option<u32>, dbm: Option<i32>) {
     if let Ok(st) = state() {
-        *st.link.lock().unwrap() = (kind.map(|kind| Link { kind, mhz, mbps, dbm }), Some(Instant::now()));
+        *st.link.lock().unwrap() = (
+            kind.map(|kind| Link {
+                kind,
+                mhz,
+                mbps,
+                dbm,
+            }),
+            Some(Instant::now()),
+        );
     }
 }
 
@@ -135,7 +148,13 @@ pub fn set_link(kind: Option<String>, mhz: Option<u32>, mbps: Option<u32>, dbm: 
 #[flutter_rust_bridge::frb(sync)]
 pub fn diagnose(fingerprint: String, speed: f64) -> Option<String> {
     let me = local_link();
-    let peer = state().ok()?.links.lock().unwrap().get(&fingerprint).cloned();
+    let peer = state()
+        .ok()?
+        .links
+        .lock()
+        .unwrap()
+        .get(&fingerprint)
+        .cloned();
     if me.is_none() && peer.is_none() {
         return None;
     }
@@ -169,7 +188,10 @@ pub fn connect(target: String) -> Result<Peer, String> {
     let target = target.trim();
     let with_port = |h: &str| -> Result<SocketAddr, String> {
         h.parse::<SocketAddr>()
-            .or_else(|_| h.parse::<Ipv4Addr>().map(|ip| SocketAddr::from((ip, DEFAULT_PORT))))
+            .or_else(|_| {
+                h.parse::<Ipv4Addr>()
+                    .map(|ip| SocketAddr::from((ip, DEFAULT_PORT)))
+            })
             .map_err(|_| format!("{h:?} is not an address like 192.168.1.20"))
     };
     if let Some(link) = target.strip_prefix("swoop://") {
@@ -217,7 +239,10 @@ pub fn scan(secs: u32, sink: StreamSink<Vec<Peer>>) -> Result<(), String> {
                 return false;
             }
             if let (Some(l), Ok(st)) = (&f.device.link, state()) {
-                st.links.lock().unwrap().insert(f.device.fp.clone(), l.clone());
+                st.links
+                    .lock()
+                    .unwrap()
+                    .insert(f.device.fp.clone(), l.clone());
             }
             let p = peer(f, &me);
             match list.iter_mut().find(|x| x.fingerprint == p.fingerprint) {
@@ -271,7 +296,8 @@ pub enum Incoming {
 /// Receives into `dir` and makes this device discoverable, until the app exits.
 pub fn receive(dir: String, sink: StreamSink<Incoming>) -> Result<(), String> {
     let st = state()?;
-    let port_err = |e: std::io::Error| format!("port {DEFAULT_PORT} is busy ({e}); is Swoop already running?");
+    let port_err =
+        |e: std::io::Error| format!("port {DEFAULT_PORT} is busy ({e}); is Swoop already running?");
     let listener = TcpListener::bind((Ipv4Addr::UNSPECIFIED, DEFAULT_PORT)).map_err(port_err)?;
     let udp = UdpSocket::bind((Ipv4Addr::UNSPECIFIED, DEFAULT_PORT)).map_err(port_err)?;
     let me = Device {
@@ -316,7 +342,10 @@ fn incoming(ev: RecvEvent, meters: &Mutex<HashMap<u64, Meter>>) -> Incoming {
             total,
             resumed,
         } => {
-            meters.lock().unwrap().insert(session, Meter::new(total, resumed));
+            meters
+                .lock()
+                .unwrap()
+                .insert(session, Meter::new(total, resumed));
             Incoming::Started {
                 session: session as i64,
                 peer_name,
@@ -371,7 +400,12 @@ fn incoming(ev: RecvEvent, meters: &Mutex<HashMap<u64, Meter>>) -> Incoming {
 fn ask(o: &Offer, sink: &StreamSink<Incoming>) -> bool {
     let Some(st) = STATE.get() else { return false };
     if st.trust.lock().unwrap().contains(&o.peer_fp)
-        || st.accepted.lock().unwrap().get(&o.peer_fp).is_some_and(|t| t.elapsed() < ACCEPTED_FOR)
+        || st
+            .accepted
+            .lock()
+            .unwrap()
+            .get(&o.peer_fp)
+            .is_some_and(|t| t.elapsed() < ACCEPTED_FOR)
     {
         return true;
     }
@@ -396,7 +430,10 @@ fn ask(o: &Offer, sink: &StreamSink<Incoming>) -> bool {
     st.offers.lock().unwrap().remove(&id);
     match reply {
         Some((true, always)) => {
-            st.accepted.lock().unwrap().insert(o.peer_fp.clone(), Instant::now());
+            st.accepted
+                .lock()
+                .unwrap()
+                .insert(o.peer_fp.clone(), Instant::now());
             if always {
                 let _ = st.trust.lock().unwrap().add(&o.peer_fp, &o.peer_name);
             }
@@ -459,7 +496,10 @@ pub fn send_files(
     sink: StreamSink<Outgoing>,
 ) -> Result<(), String> {
     let st = state()?;
-    let mut addr: SocketAddr = peer.addr.parse().map_err(|e| format!("{}: {e}", peer.addr))?;
+    let mut addr: SocketAddr = peer
+        .addr
+        .parse()
+        .map_err(|e| format!("{}: {e}", peer.addr))?;
     let cancel = Arc::new(AtomicBool::new(false));
     st.sends.lock().unwrap().insert(id, cancel.clone());
     thread::spawn(move || {
@@ -480,17 +520,24 @@ pub fn send_files(
         };
         let mut last_ok = Instant::now();
         let r = loop {
-            let r = send::send(addr, &st.id, &peer.fingerprint, &sources, &opts, |s, streams| {
-                last_ok = Instant::now();
-                let _ = sink.add(Outgoing::Progress {
-                    done: s.done as i64,
-                    total: s.total as i64,
-                    speed: s.speed,
-                    peak: s.peak,
-                    eta: s.eta,
-                    streams,
-                });
-            });
+            let r = send::send(
+                addr,
+                &st.id,
+                &peer.fingerprint,
+                &sources,
+                &opts,
+                |s, streams| {
+                    last_ok = Instant::now();
+                    let _ = sink.add(Outgoing::Progress {
+                        done: s.done as i64,
+                        total: s.total as i64,
+                        speed: s.speed,
+                        peak: s.peak,
+                        eta: s.eta,
+                        streams,
+                    });
+                },
+            );
             match r {
                 Err(e) if dropped(&e) && last_ok.elapsed() < RECONNECT_FOR => {
                     let _ = sink.add(Outgoing::Reconnecting {
@@ -498,7 +545,10 @@ pub fn send_files(
                     });
                     thread::sleep(Duration::from_secs(2));
                     if cancel.load(Ordering::Relaxed) {
-                        break Err(std::io::Error::new(std::io::ErrorKind::Interrupted, "cancelled"));
+                        break Err(std::io::Error::new(
+                            std::io::ErrorKind::Interrupted,
+                            "cancelled",
+                        ));
                     }
                     if let Some(a) = find(&peer.fingerprint, addr) {
                         addr = a;
@@ -527,7 +577,10 @@ pub fn send_files(
 /// Stops the send `id`; the receiver keeps what arrived, so sending again resumes.
 #[flutter_rust_bridge::frb(sync)]
 pub fn cancel(id: i64) {
-    if let Some(c) = STATE.get().and_then(|st| st.sends.lock().unwrap().get(&id).cloned()) {
+    if let Some(c) = STATE
+        .get()
+        .and_then(|st| st.sends.lock().unwrap().get(&id).cloned())
+    {
         c.store(true, Ordering::Relaxed);
     }
 }
@@ -558,6 +611,9 @@ fn find(fp: &str, old: SocketAddr) -> Option<SocketAddr> {
         std::net::IpAddr::V4(ip) => vec![ip],
         _ => vec![],
     };
-    let found = discover::scan(old.port(), Duration::from_secs(3), &extra, |f| f.device.fp == fp).ok()?;
+    let found = discover::scan(old.port(), Duration::from_secs(3), &extra, |f| {
+        f.device.fp == fp
+    })
+    .ok()?;
     Some(*found.iter().find(|f| f.device.fp == fp)?.addrs.first()?)
 }

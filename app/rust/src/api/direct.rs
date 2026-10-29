@@ -7,7 +7,11 @@ use crate::frb_generated::StreamSink;
 #[derive(Clone, Debug)]
 pub enum BleEvent {
     /// A Swoop device advertising nearby. `id` is its Bluetooth address, `fp` the first 16 hex of its fingerprint.
-    Seen { id: String, name: String, fp: String },
+    Seen {
+        id: String,
+        name: String,
+        fp: String,
+    },
     /// Another device wrote an invite to us (JSON, see PLAN.md).
     Invite { json: String },
 }
@@ -106,11 +110,13 @@ mod ble {
     use super::{rt, BleEvent};
     use bluer::adv::{Advertisement, Type};
     use bluer::gatt::local::{
-        Application, Characteristic, CharacteristicWrite, CharacteristicWriteMethod, CharacteristicWriteRequest,
-        ReqError, Service,
+        Application, Characteristic, CharacteristicWrite, CharacteristicWriteMethod,
+        CharacteristicWriteRequest, ReqError, Service,
     };
     use bluer::gatt::remote;
-    use bluer::{Adapter, AdapterEvent, Address, Device, DiscoveryFilter, DiscoveryTransport, Session, Uuid};
+    use bluer::{
+        Adapter, AdapterEvent, Address, Device, DiscoveryFilter, DiscoveryTransport, Session, Uuid,
+    };
     use futures_util::StreamExt;
     use std::collections::{BTreeMap, HashMap};
     use std::sync::{Arc, Mutex};
@@ -145,9 +151,15 @@ mod ble {
     ) -> Result<(), String> {
         let short = fp
             .get(..16)
-            .and_then(|h| (0..8).map(|i| u8::from_str_radix(&h[i * 2..i * 2 + 2], 16).ok()).collect())
+            .and_then(|h| {
+                (0..8)
+                    .map(|i| u8::from_str_radix(&h[i * 2..i * 2 + 2], 16).ok())
+                    .collect()
+            })
             .ok_or("fingerprint must start with 16 hex chars")?;
-        let session = Session::new().await.map_err(|e| format!("Bluetooth is not available ({e})"))?;
+        let session = Session::new()
+            .await
+            .map_err(|e| format!("Bluetooth is not available ({e})"))?;
         let adapter = adapter(&session).await?;
         let emit = Arc::new(emit);
         // Cut to fit the scan response ourselves: BlueZ would send it as a "shortened" name, which loses to the name
@@ -184,7 +196,8 @@ mod ble {
             } else {
                 buf.extend(value);
                 if serde_json::from_slice::<serde_json::Value>(buf).is_ok() {
-                    let json = String::from_utf8(parts.remove(&req.device_address).unwrap()).unwrap();
+                    let json =
+                        String::from_utf8(parts.remove(&req.device_address).unwrap()).unwrap();
                     on_invite(BleEvent::Invite { json });
                 }
                 Ok(())
@@ -244,7 +257,12 @@ mod ble {
     // itself if that ever shows up in a crowded room.
     async fn seen(adapter: &Adapter, addr: Address) -> Option<BleEvent> {
         let d = adapter.device(addr).ok()?;
-        let fp = d.service_data().await.ok()??.remove(&SERVICE).filter(|v| v.len() == 8)?;
+        let fp = d
+            .service_data()
+            .await
+            .ok()??
+            .remove(&SERVICE)
+            .filter(|v| v.len() == 8)?;
         Some(BleEvent::Seen {
             id: addr.to_string(),
             name: d.name().await.ok().flatten().unwrap_or_default(),
@@ -253,12 +271,25 @@ mod ble {
     }
 
     pub(super) async fn invite(id: String, json: String) -> Result<(), String> {
-        let addr: Address = id.parse().map_err(|_| format!("{id:?} is not a Bluetooth address"))?;
-        let session = Session::new().await.map_err(|e| format!("Bluetooth is not available ({e})"))?;
+        let addr: Address = id
+            .parse()
+            .map_err(|_| format!("{id:?} is not a Bluetooth address"))?;
+        let session = Session::new()
+            .await
+            .map_err(|e| format!("Bluetooth is not available ({e})"))?;
         let dev = adapter(&session).await?.device(addr).map_err(bt)?;
         // With response (bluer's default is without), so a lost write is an error here.
-        let req = remote::CharacteristicWriteRequest { op_type: bluer::gatt::WriteOp::Request, ..Default::default() };
-        let send = async { invite_char(&dev).await?.write_ext(json.as_bytes(), &req).await.map_err(bt) };
+        let req = remote::CharacteristicWriteRequest {
+            op_type: bluer::gatt::WriteOp::Request,
+            ..Default::default()
+        };
+        let send = async {
+            invite_char(&dev)
+                .await?
+                .write_ext(json.as_bytes(), &req)
+                .await
+                .map_err(bt)
+        };
         let res = tokio::time::timeout(Duration::from_secs(30), send)
             .await
             .unwrap_or_else(|_| Err("Bluetooth: the device didn't answer".into()));
@@ -359,15 +390,46 @@ mod nm {
         delete(HOST);
         let start = || {
             nmcli(&[
-                "connection", "add", "type", "wifi", "ifname", &dev, "con-name", HOST, "autoconnect", "no",
-                "ssid", &wifi.ssid, "802-11-wireless.mode", "ap",
-                "ipv4.method", "shared", "ipv6.method", "ignore",
-                "wifi-sec.key-mgmt", "wpa-psk", "wifi-sec.psk", &wifi.pass,
-                "wifi-sec.proto", "rsn", "wifi-sec.pairwise", "ccmp", "wifi-sec.group", "ccmp",
+                "connection",
+                "add",
+                "type",
+                "wifi",
+                "ifname",
+                &dev,
+                "con-name",
+                HOST,
+                "autoconnect",
+                "no",
+                "ssid",
+                &wifi.ssid,
+                "802-11-wireless.mode",
+                "ap",
+                "ipv4.method",
+                "shared",
+                "ipv6.method",
+                "ignore",
+                "wifi-sec.key-mgmt",
+                "wpa-psk",
+                "wifi-sec.psk",
+                &wifi.pass,
+                "wifi-sec.proto",
+                "rsn",
+                "wifi-sec.pairwise",
+                "ccmp",
+                "wifi-sec.group",
+                "ccmp",
             ])?;
             let mut err = String::new();
             for (band, ch) in tries {
-                let set = ["connection", "modify", HOST, "802-11-wireless.band", band, "802-11-wireless.channel", &ch];
+                let set = [
+                    "connection",
+                    "modify",
+                    HOST,
+                    "802-11-wireless.band",
+                    band,
+                    "802-11-wireless.channel",
+                    &ch,
+                ];
                 match nmcli(&set).and_then(|_| nmcli(&["--wait", "30", "connection", "up", HOST])) {
                     Ok(_) => return Ok(()),
                     Err(e) => err = e,
@@ -388,7 +450,10 @@ mod nm {
     /// None when it can't tell.
     fn free_5ghz(dev: &str) -> Option<Vec<String>> {
         let phy = std::fs::read_to_string(format!("/sys/class/net/{dev}/phy80211/name")).ok()?;
-        let out = Command::new("iw").args(["phy", phy.trim(), "info"]).output().ok()?;
+        let out = Command::new("iw")
+            .args(["phy", phy.trim(), "info"])
+            .output()
+            .ok()?;
         if !out.status.success() {
             return None;
         }
@@ -399,7 +464,9 @@ mod nm {
                 .filter_map(|l| {
                     let (mhz, rest) = l.trim().strip_prefix("* ")?.split_once(" MHz [")?;
                     let mhz: f32 = mhz.parse().ok()?;
-                    (5000.0..5900.0).contains(&mhz).then(|| rest.split(']').next().unwrap().to_string())
+                    (5000.0..5900.0)
+                        .contains(&mhz)
+                        .then(|| rest.split(']').next().unwrap().to_string())
                 })
                 .collect(),
         )
@@ -411,16 +478,35 @@ mod nm {
         let key = if wifi.sec == "wpa3" { "sae" } else { "wpa-psk" };
         delete(JOIN);
         nmcli(&[
-            "connection", "add", "type", "wifi", "ifname", &dev, "con-name", JOIN, "autoconnect", "no",
-            "ssid", &wifi.ssid, "wifi-sec.key-mgmt", key, "wifi-sec.psk", &wifi.pass,
+            "connection",
+            "add",
+            "type",
+            "wifi",
+            "ifname",
+            &dev,
+            "con-name",
+            JOIN,
+            "autoconnect",
+            "no",
+            "ssid",
+            &wifi.ssid,
+            "wifi-sec.key-mgmt",
+            key,
+            "wifi-sec.psk",
+            &wifi.pass,
             // Up means it has an IPv4 address; and it has no internet, so keep the default route.
-            "ipv4.may-fail", "no", "ipv4.never-default", "yes",
+            "ipv4.may-fail",
+            "no",
+            "ipv4.never-default",
+            "yes",
         ])
         .map_err(|e| format!("can't join {}: {e}", wifi.ssid))?;
         let deadline = Instant::now() + Duration::from_secs(30);
         loop {
-            let visible = nmcli(&["-t", "-f", "SSID", "device", "wifi", "list", "ifname", &dev, "--rescan", "no"])
-                .is_ok_and(|o| o.lines().any(|l| l == wifi.ssid));
+            let visible = nmcli(&[
+                "-t", "-f", "SSID", "device", "wifi", "list", "ifname", &dev, "--rescan", "no",
+            ])
+            .is_ok_and(|o| o.lines().any(|l| l == wifi.ssid));
             let err = if visible {
                 match nmcli(&["--wait", "20", "connection", "up", JOIN]) {
                     Ok(_) => return Ok(()),
@@ -433,7 +519,9 @@ mod nm {
                 delete(JOIN);
                 return Err(format!("can't join {}: {err}", wifi.ssid));
             }
-            let _ = nmcli(&["device", "wifi", "rescan", "ifname", &dev, "ssid", &wifi.ssid]);
+            let _ = nmcli(&[
+                "device", "wifi", "rescan", "ifname", &dev, "ssid", &wifi.ssid,
+            ]);
             thread::sleep(Duration::from_secs(2));
         }
     }
@@ -449,7 +537,9 @@ mod tests {
     use std::time::Duration;
 
     fn link(path: String) -> String {
-        std::fs::read_link(&path).map(|p| p.display().to_string()).unwrap_or_default()
+        std::fs::read_link(&path)
+            .map(|p| p.display().to_string())
+            .unwrap_or_default()
     }
 
     #[test]
@@ -458,7 +548,10 @@ mod tests {
         let (host, join) = (var("UFT_WIFI_DEV").unwrap(), var("UFT_WIFI_JOIN").unwrap());
         for d in [&host, &join] {
             let driver = link(format!("/sys/class/net/{d}/device/driver"));
-            assert!(driver.ends_with("/mac80211_hwsim"), "{d} is not a mac80211_hwsim radio");
+            assert!(
+                driver.ends_with("/mac80211_hwsim"),
+                "{d} is not a mac80211_hwsim radio"
+            );
         }
         let t = std::time::Instant::now();
         let wifi = host_wifi().unwrap();
@@ -467,24 +560,35 @@ mod tests {
         let t = std::time::Instant::now();
         let res = join_wifi(wifi);
         println!("joined after {:?}", t.elapsed());
-        let ip = std::process::Command::new("ip").args(["-4", "-o", "addr", "show", "dev", &join]).output();
+        let ip = std::process::Command::new("ip")
+            .args(["-4", "-o", "addr", "show", "dev", &join])
+            .output();
         let ip = String::from_utf8_lossy(&ip.unwrap().stdout).into_owned();
         println!("{join}: {ip}");
-        let stations = std::process::Command::new("iw").args(["dev", &host, "station", "dump"]).output();
-        println!("{host} stations:\n{}", String::from_utf8_lossy(&stations.unwrap().stdout));
+        let stations = std::process::Command::new("iw")
+            .args(["dev", &host, "station", "dump"])
+            .output();
+        println!(
+            "{host} stations:\n{}",
+            String::from_utf8_lossy(&stations.unwrap().stdout)
+        );
         leave_wifi();
         stop_host();
         res.unwrap();
         // From the host's DHCP server, so it went over the (virtual) air.
         assert!(ip.contains("inet 10.42.0."), "{ip}");
-        let cons = std::process::Command::new("nmcli").args(["-t", "-f", "NAME", "connection"]).output();
+        let cons = std::process::Command::new("nmcli")
+            .args(["-t", "-f", "NAME", "connection"])
+            .output();
         let cons = String::from_utf8_lossy(&cons.unwrap().stdout).into_owned();
         assert!(!cons.lines().any(|c| c.starts_with("swoop-")), "{cons}");
     }
 
     fn next(rx: &Receiver<BleEvent>, want: impl Fn(&BleEvent) -> bool) -> BleEvent {
         loop {
-            let e = rx.recv_timeout(Duration::from_secs(30)).expect("no BLE event in 30 s");
+            let e = rx
+                .recv_timeout(Duration::from_secs(30))
+                .expect("no BLE event in 30 s");
             if want(&e) {
                 return e;
             }
@@ -494,9 +598,15 @@ mod tests {
     #[test]
     #[ignore = "needs two virtual Bluetooth controllers"]
     fn ble_find_invite() {
-        let (a, b) = (var("UFT_BT_ADAPTER").unwrap(), var("UFT_BT_ADAPTER2").unwrap());
+        let (a, b) = (
+            var("UFT_BT_ADAPTER").unwrap(),
+            var("UFT_BT_ADAPTER2").unwrap(),
+        );
         for x in [&a, &b] {
-            assert!(link(format!("/sys/class/bluetooth/{x}")).contains("/virtual/"), "{x} is not virtual");
+            assert!(
+                link(format!("/sys/class/bluetooth/{x}")).contains("/virtual/"),
+                "{x} is not virtual"
+            );
         }
         let (fp_a, fp_b) = ("0123456789abcdef".repeat(4), "fedcba9876543210".repeat(4));
         let long_name = "a device name too long to fit in a scan response";
@@ -510,11 +620,15 @@ mod tests {
                 request_default: true,
                 request_confirmation: Some(Box::new(move |r| {
                     let ok = ours.contains(&r.adapter);
-                    Box::pin(async move { ok.then_some(()).ok_or(bluer::agent::ReqError::Rejected) })
+                    Box::pin(
+                        async move { ok.then_some(()).ok_or(bluer::agent::ReqError::Rejected) },
+                    )
                 })),
                 request_authorization: Some(Box::new(move |r| {
                     let ok = ours2.contains(&r.adapter);
-                    Box::pin(async move { ok.then_some(()).ok_or(bluer::agent::ReqError::Rejected) })
+                    Box::pin(
+                        async move { ok.then_some(()).ok_or(bluer::agent::ReqError::Rejected) },
+                    )
                 })),
                 ..Default::default()
             };
@@ -523,33 +637,49 @@ mod tests {
         });
         let (ta, ra) = channel();
         let (tb, rb) = channel();
-        rt().block_on(ble::start(fp_a.clone(), long_name.into(), move |e| ta.send(e).is_ok())).unwrap();
+        rt().block_on(ble::start(fp_a.clone(), long_name.into(), move |e| {
+            ta.send(e).is_ok()
+        }))
+        .unwrap();
         set_var("UFT_BT_ADAPTER", &b);
-        rt().block_on(ble::start(fp_b.clone(), "uft-b".into(), move |e| tb.send(e).is_ok())).unwrap();
+        rt().block_on(ble::start(fp_b.clone(), "uft-b".into(), move |e| {
+            tb.send(e).is_ok()
+        }))
+        .unwrap();
 
-        let BleEvent::Seen { id, name, .. } = next(&rb, |e| matches!(e, BleEvent::Seen { fp, .. } if fp_a.starts_with(fp.as_str())))
-        else {
+        let BleEvent::Seen { id, name, .. } = next(
+            &rb,
+            |e| matches!(e, BleEvent::Seen { fp, .. } if fp_a.starts_with(fp.as_str())),
+        ) else {
             unreachable!()
         };
         println!("{b} sees {id} {name:?}");
         assert!(!name.is_empty() && long_name.starts_with(&name), "{name:?}");
-        next(&ra, |e| matches!(e, BleEvent::Seen { name, .. } if name == "uft-b"));
+        next(
+            &ra,
+            |e| matches!(e, BleEvent::Seen { name, .. } if name == "uft-b"),
+        );
 
         let json = format!(
             r#"{{"v":1,"ssid":"uft-1a2b","pass":"0123456789abcdef","sec":"wpa2","fp":"{fp_b}","name":"{}"}}"#,
             "x".repeat(80)
         );
-        let invited = |rx: &Receiver<BleEvent>| match next(rx, |e| matches!(e, BleEvent::Invite { .. })) {
-            BleEvent::Invite { json } => json,
-            _ => unreachable!(),
-        };
+        let invited =
+            |rx: &Receiver<BleEvent>| match next(rx, |e| matches!(e, BleEvent::Invite { .. })) {
+                BleEvent::Invite { json } => json,
+                _ => unreachable!(),
+            };
         ble_invite(id.clone(), json.clone()).unwrap();
         assert_eq!(invited(&ra), json);
 
         // In two pieces, the second one at an offset: how a long write arrives.
         rt().block_on(async {
             let s = bluer::Session::new().await.unwrap();
-            let dev = ble::adapter(&s).await.unwrap().device(id.parse().unwrap()).unwrap();
+            let dev = ble::adapter(&s)
+                .await
+                .unwrap()
+                .device(id.parse().unwrap())
+                .unwrap();
             let c = ble::invite_char(&dev).await.unwrap();
             let (x, y) = json.as_bytes().split_at(100);
             let mut at = bluer::gatt::remote::CharacteristicWriteRequest {

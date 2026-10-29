@@ -192,7 +192,9 @@ fn parse_args(args: &[String]) -> Result<Cmd, String> {
                     .trim_end_matches('/')
                     .rsplit_once('/')
                     .filter(|(h, f)| !h.is_empty() && is_fp(f) && fp.is_none())
-                    .ok_or_else(|| format!("bad link {device:?} (swoop://HOST:PORT/FINGERPRINT)"))?;
+                    .ok_or_else(|| {
+                        format!("bad link {device:?} (swoop://HOST:PORT/FINGERPRINT)")
+                    })?;
                 fp = Some(f.to_ascii_lowercase());
                 device = host.to_string();
             }
@@ -455,7 +457,9 @@ fn run(cmd: Cmd) -> Res<()> {
                         }
                     });
                 }
-                Err(e) => eprintln!("swoop: not discoverable (UDP {port}: {e}); senders need a link"),
+                Err(e) => {
+                    eprintln!("swoop: not discoverable (UDP {port}: {e}); senders need a link")
+                }
             }
             let accept: Option<recv::Accept> = if yes {
                 None
