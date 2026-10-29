@@ -38,6 +38,23 @@ jobs:
           ./target/release/swoop bench --size 2G | tee -a "$GITHUB_STEP_SUMMARY"
           echo '```' >> "$GITHUB_STEP_SUMMARY"
 
+  windows:
+    runs-on: windows-latest
+    steps:
+      # Keep the repository's LF line endings (the runner's git turns them into CRLF).
+      - run: git config --global core.autocrlf false
+        working-directory: .
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: core
+      - run: cargo test --release --locked
+      - run: cargo clippy --locked --all-targets
+      - run: cargo fmt --check
+
   android:
     runs-on: ubuntu-latest
     steps:
@@ -72,6 +89,28 @@ jobs:
       - run: flutter analyze
       - run: flutter test
       - run: flutter build linux --release
+
+  windows-app:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: bash
+        working-directory: app
+    steps:
+      - run: git config --global core.autocrlf false
+        working-directory: .
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: app/rust -> ../build/windows/x64/plugins/uft_bridge/cargokit_build
+      - run: echo "version=$(cat .flutter-version)" >> "$GITHUB_OUTPUT"
+        id: flutter
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ steps.flutter.outputs.version }}
+          cache: true
+      - run: flutter build windows --release
 
   apk:
     runs-on: ubuntu-latest
