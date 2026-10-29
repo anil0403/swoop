@@ -16,15 +16,16 @@ from the commit types below. **Never set or change a version by hand.**
 | `feat!:` (breaking) | a release right away, with any betas | `2.0.0` |
 | `docs:`, `ci:`, `test:` | nothing | — |
 
-- **One version for everything.** The Linux app, the Android app and the `swoop` command-line tool share the core and
+- **One version for everything.** The Linux, Windows and Android apps and the `swoop` command-line tool share the core and
   the protocol, so one tag (`v1.1.0`) covers all of them, and everything built from it shows the same version.
 - Normal updates install only releases. Betas are for testing, and users must ask for them:
 
   | Platform | Beta | Release |
   |---|---|---|
   | Linux | GitHub pre-release | GitHub release (tarball, AppImage, Flatpak bundle), AUR (`swoop-bin`), Flathub (later) |
+  | Windows | GitHub pre-release | GitHub release (zip) |
   | Android | beta APK on GitHub | APK on GitHub, F-Droid (later) |
-  | `swoop` CLI | GitHub pre-release (Linux and Android binaries) | GitHub release |
+  | `swoop` CLI | GitHub pre-release (Linux, Windows and Android binaries) | GitHub release |
 
 - Betas stay on the Releases page, marked "Pre-release". A release has all the changes of the betas before it.
 - Versions only go up. A released version never changes: if it's wrong, the next one fixes it.
@@ -68,7 +69,7 @@ type: short sentence about the change        e.g.  feat: resume interrupted tran
 type(scope): ...                             scope is optional: fix(android): ...
 ```
 
-Scopes: `core`, `protocol`, `cli`, `linux`, `android`.
+Scopes: `core`, `protocol`, `cli`, `linux`, `windows`, `android`.
 
 ### `feat!:` a breaking change
 
@@ -208,6 +209,8 @@ hand** (Actions ▸ version ▸ Run workflow, with `bump`: `auto`, `major`, `min
      `share/applications/io.github.anil0403.swoop.desktop`. The same files as `swoop-x86_64.AppImage` and
      `swoop-aarch64.AppImage`, and `swoop-x86_64.flatpak`
      ([`packaging/flatpak`](packaging/flatpak), app id `io.github.anil0403.swoop`).
+   - **Windows:** `swoop-windows-x86_64.zip`: the app (`swoop-app.exe` with its DLLs and `data\`) and `swoop.exe`,
+     at the top of the zip.
    - **Android:** `swoop-android.apk` (the app; arm64, armv7 and x86_64), and `swoop-android-aarch64.tar.gz` (the
      `swoop` command, for Termux).
    - **APK signing:** with the release key from the repository secrets `ANDROID_KEYSTORE` (the `.jks` file,
