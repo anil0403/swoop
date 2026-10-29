@@ -13,6 +13,10 @@ part 'uft.freezed.dart';
 // These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `State`
 // These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `clone`, `clone`, `clone`, `fmt`, `fmt`, `fmt`
 
+/// Off: every offer is declined without asking.
+void setReceiving({required bool enabled}) =>
+    RustLib.instance.api.crateApiUftSetReceiving(enabled: enabled);
+
 /// Loads or creates this device's identity in `config_dir`. `name` is shown to other devices.
 Future<Me> init({required String configDir, required String name}) =>
     RustLib.instance.api.crateApiUftInit(configDir: configDir, name: name);
@@ -31,10 +35,10 @@ String? diagnose({required String fingerprint, required double speed}) =>
       speed: speed,
     );
 
-/// This device as `uft://IP:PORT/FINGERPRINT`, one per local network: what to type on a device that can't find it.
+/// This device as `swoop://IP:PORT/FINGERPRINT`, one per local network: what to type on a device that can't find it.
 List<String> myLinks() => RustLib.instance.api.crateApiUftMyLinks();
 
-/// A device scanning can't find: a `uft://HOST:PORT/FINGERPRINT` link (taken as is), or an `IP[:PORT]`
+/// A device scanning can't find: a `swoop://HOST:PORT/FINGERPRINT` link (taken as is), or an `IP[:PORT]`
 /// (asked who it is, ~2 s).
 Future<Peer> connect({required String target}) =>
     RustLib.instance.api.crateApiUftConnect(target: target);

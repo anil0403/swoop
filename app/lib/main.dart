@@ -7,6 +7,8 @@ import 'package:flutter/services.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:uft/src/rust/api/uft.dart' as uft;
 import 'package:uft/src/rust/frb_generated.dart';
+import 'package:desktop_drop/desktop_drop.dart';
+import 'package:qr_flutter/qr_flutter.dart';
 
 import 'direct.dart' as direct;
 
@@ -43,6 +45,7 @@ class Transfer {
 
   /// A running send's id, for `uft.cancel`.
   int? sendId;
+  final started = DateTime.now();
 }
 
 var _nextSend = 1;
@@ -86,7 +89,13 @@ class HomeState extends State<Home> {
   final manual = <uft.Peer>[];
   final transfers = <Transfer>[];
   final incoming = <int, Transfer>{};
-  bool scanning = false, busy = false;
+  bool scanning = false, busy = false, receiving = true;
+
+  /// Shared to Swoop (Android) or dropped on the window (Linux): sent to the next device tapped.
+  List<uft.Pick>? pending;
+
+  /// Transfer progress into the Android notification while busy.
+  Timer? notify;
   Timer? rescan;
 
   /// Seen over Bluetooth, by fingerprint prefix; those not also on this network get the direct link.
@@ -132,6 +141,12 @@ class HomeState extends State<Home> {
       uft.receive(dir: d).listen(onIncoming, onError: (Object e) => setState(() => error = '$e'));
       scan();
       startBle();
+      if (Platform.isAndroid) {
+        android.setMethodCallHandler((c) async {
+          if (c.method == 'intent') opened();
+        });
+        opened();
+      }
     } catch (e) {
       setState(() => error = '$e');
     }
@@ -178,6 +193,30 @@ class HomeState extends State<Home> {
             rescan = Timer(const Duration(seconds: 4), scan);
           },
         );
+  }
+
+  /// Files shared to Swoop, and swoop:// links opened (a QR code scanned with the camera).
+  Future<void> opened() async {
+    final got = await android.invokeListMethod<List<Object?>>('shared') ?? [];
+    if (got.isNotEmpty) {
+      if (pending != null) release(pending!);
+      setState(
+        () => pending = [for (final x in got) uft.Pick(path: x[0] as String, name: x[1] as String)],
+      );
+    }
+    final link = await android.invokeMethod<String>('openedLink');
+    if (link == null) return;
+    try {
+      await addPeer(link);
+    } catch (e) {
+      setState(() => error = '$e');
+    }
+  }
+
+  List<uft.Pick>? takePending() {
+    final x = pending;
+    if (x != null) setState(() => pending = null);
+    return x;
   }
 
   void startBle() {
@@ -230,6 +269,10 @@ class HomeState extends State<Home> {
             t.done = t.total;
             t.result = 'Received ${size(e.bytes)} in ${duration(e.secs)} · saved to $dir';
           });
+          // Photos and videos show up in the Gallery.
+          if (Platform.isAndroid) {
+            android.invokeMethod('scan', {'dir': dir, 'since': t.started.millisecondsSinceEpoch});
+          }
         }
       case uft.Incoming_Failed():
         if (e.session == joinedSession) leaveDirect();
@@ -282,7 +325,7 @@ class HomeState extends State<Home> {
   }
 
   Future<void> pick(uft.Peer p) async {
-    final picks = await choose('Send to ${p.name} · code ${p.code}');
+    final picks = takePending() ?? await choose('Send to ${p.name} · code ${p.code}');
     if (picks.isNotEmpty) send(p, picks);
   }
 
@@ -324,8 +367,26 @@ class HomeState extends State<Home> {
   /// Tells Android while something transfers, so it keeps the CPU and Wi-Fi at full speed.
   void updateBusy() {
     final now = transfers.any((t) => t.result == null);
-    if (now != busy && Platform.isAndroid) android.invokeMethod('busy', now);
+    if (now != busy && Platform.isAndroid) {
+      android.invokeMethod('busy', now);
+      notify?.cancel();
+      notify = now ? Timer.periodic(const Duration(seconds: 1), (_) => showProgress()) : null;
+    }
     busy = now;
+  }
+
+  void showProgress() {
+    final running = transfers.where((t) => t.result == null && t.note == null).toList();
+    android.invokeMethod(
+      'progress',
+      running.isEmpty
+          ? null
+          : {
+              'title': running.length == 1 ? running.first.title : '${running.length} transfers',
+              'done': running.fold(0, (a, t) => a + t.done),
+              'total': running.fold(0, (a, t) => a + t.total),
+            },
+    );
   }
 
   /// "file.txt", "folder" or "3 items".
@@ -399,7 +460,7 @@ class HomeState extends State<Home> {
   /// To a device seen only over Bluetooth: host a hotspot, invite it over Bluetooth, wait until it's on the hotspot,
   /// send, take the hotspot down.
   Future<void> sendDirect(direct.BlePeer b) async {
-    final picks = await choose('Send to ${b.name} · direct Wi-Fi link');
+    final picks = takePending() ?? await choose('Send to ${b.name} · direct Wi-Fi link');
     if (picks.isEmpty) return;
     final t = Transfer('To ${b.name} · ${describe(picks)}')..note = 'Starting a hotspot…';
     setState(() => transfers.insert(0, t));
@@ -479,6 +540,7 @@ class HomeState extends State<Home> {
   /// For networks where scanning can't reach: shows this device's links, takes the other one's.
   Future<void> connectByAddress() async {
     final field = TextEditingController();
+    final links = uft.myLinks();
     final target = await showDialog<String>(
       context: context,
       builder: (context) => AlertDialog(
@@ -488,7 +550,15 @@ class HomeState extends State<Home> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             const Text('On the other device, type one of these:'),
-            for (final l in uft.myLinks()) SelectableText(l, style: const TextStyle(fontSize: 12)),
+            for (final l in links) SelectableText(l, style: const TextStyle(fontSize: 12)),
+            // A phone's camera opens Swoop from it.
+            if (!Platform.isAndroid && links.isNotEmpty) ...[
+              const SizedBox(height: 8),
+              const Text('Or scan this with the phone camera:'),
+              Center(
+                child: QrImageView(data: links.first, size: 180, backgroundColor: Colors.white),
+              ),
+            ],
             const SizedBox(height: 16),
             TextField(
               controller: field,
@@ -538,6 +608,14 @@ class HomeState extends State<Home> {
         title: Text(me == null ? 'Swoop' : 'Swoop · ${me!.name}'),
         actions: [
           IconButton(
+            icon: Icon(receiving ? Icons.download : Icons.file_download_off),
+            tooltip: receiving ? 'Receiving: on' : 'Receiving: off (offers are declined)',
+            onPressed: () {
+              setState(() => receiving = !receiving);
+              uft.setReceiving(enabled: receiving);
+            },
+          ),
+          IconButton(
             icon: const Icon(Icons.add_link),
             tooltip: 'Connect by address',
             onPressed: me == null ? null : connectByAddress,
@@ -550,69 +628,96 @@ class HomeState extends State<Home> {
               )
             : null,
       ),
-      body: ListView(
-        padding: const EdgeInsets.all(16),
-        children: [
-          if (error != null)
-            Card(
-              color: theme.colorScheme.errorContainer,
-              child: ListTile(leading: const Icon(Icons.error), title: Text(error!)),
-            ),
-          if (dir != null)
-            Text('Visible to nearby devices · saving to $dir', style: theme.textTheme.bodySmall),
-          const SizedBox(height: 16),
-          Text('Nearby devices', style: theme.textTheme.titleMedium),
-          if (peers.isEmpty && manual.isEmpty)
-            const Padding(
-              padding: EdgeInsets.symmetric(vertical: 16),
-              child: Text('Looking for devices on this network… Open Swoop on the other device.'),
-            ),
-          for (final p in [
-            ...peers,
-            ...manual.where((m) => !peers.any((p) => p.fingerprint == m.fingerprint)),
-          ])
-            Card(
-              child: ListTile(
-                leading: Icon(p.os == 'android' ? Icons.phone_android : Icons.computer),
-                title: Text(p.name),
-                subtitle: Text(
-                  '${p.addr} · code ${p.code}'
-                  '${p.link == null ? '' : '\n${p.link}'}'
-                  '${p.expected == null ? '' : ' · up to ${speed(p.expected!)}'}',
+      body: dropZone(
+        ListView(
+          padding: const EdgeInsets.all(16),
+          children: [
+            if (error != null)
+              Card(
+                color: theme.colorScheme.errorContainer,
+                child: ListTile(leading: const Icon(Icons.error), title: Text(error!)),
+              ),
+            if (pending != null)
+              Card(
+                color: theme.colorScheme.primaryContainer,
+                child: ListTile(
+                  leading: const Icon(Icons.send),
+                  title: Text('Send ${describe(pending!)}'),
+                  subtitle: const Text('Tap a device below'),
+                  trailing: IconButton(
+                    icon: const Icon(Icons.close),
+                    tooltip: 'Cancel',
+                    onPressed: () => release(takePending()!),
+                  ),
                 ),
-                trailing: const Icon(Icons.send),
-                onTap: () => pick(p),
               ),
-            ),
-          for (final b in ble.values.where(
-            (b) => ![...peers, ...manual].any((p) => p.fingerprint.startsWith(b.fp)),
-          ))
-            Card(
-              child: ListTile(
-                leading: const Icon(Icons.bluetooth),
-                title: Text(b.name.isEmpty ? 'Swoop device' : b.name),
-                subtitle: const Text('Not on this network · sends over a direct Wi-Fi link'),
-                trailing: const Icon(Icons.send),
-                onTap: () => sendDirect(b),
-              ),
-            ),
-          if (bleError != null)
-            Padding(
-              padding: const EdgeInsets.symmetric(vertical: 8),
-              child: Text(
-                'Bluetooth: $bleError. Devices on other networks only show up with Bluetooth on.',
-                style: theme.textTheme.bodySmall,
-              ),
-            ),
-          if (transfers.isNotEmpty) ...[
+            if (dir != null)
+              Text('Visible to nearby devices · saving to $dir', style: theme.textTheme.bodySmall),
             const SizedBox(height: 16),
-            Text('Transfers', style: theme.textTheme.titleMedium),
+            Text('Nearby devices', style: theme.textTheme.titleMedium),
+            if (peers.isEmpty && manual.isEmpty)
+              const Padding(
+                padding: EdgeInsets.symmetric(vertical: 16),
+                child: Text('Looking for devices on this network… Open Swoop on the other device.'),
+              ),
+            for (final p in [
+              ...peers,
+              ...manual.where((m) => !peers.any((p) => p.fingerprint == m.fingerprint)),
+            ])
+              Card(
+                child: ListTile(
+                  leading: Icon(p.os == 'android' ? Icons.phone_android : Icons.computer),
+                  title: Text(p.name),
+                  subtitle: Text(
+                    '${p.addr} · code ${p.code}'
+                    '${p.link == null ? '' : '\n${p.link}'}'
+                    '${p.expected == null ? '' : ' · up to ${speed(p.expected!)}'}',
+                  ),
+                  trailing: const Icon(Icons.send),
+                  onTap: () => pick(p),
+                ),
+              ),
+            for (final b in ble.values.where(
+              (b) => ![...peers, ...manual].any((p) => p.fingerprint.startsWith(b.fp)),
+            ))
+              Card(
+                child: ListTile(
+                  leading: const Icon(Icons.bluetooth),
+                  title: Text(b.name.isEmpty ? 'Swoop device' : b.name),
+                  subtitle: const Text('Not on this network · sends over a direct Wi-Fi link'),
+                  trailing: const Icon(Icons.send),
+                  onTap: () => sendDirect(b),
+                ),
+              ),
+            if (bleError != null)
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 8),
+                child: Text(
+                  'Bluetooth: $bleError. Devices on other networks only show up with Bluetooth on.',
+                  style: theme.textTheme.bodySmall,
+                ),
+              ),
+            if (transfers.isNotEmpty) ...[
+              const SizedBox(height: 16),
+              Text('Transfers', style: theme.textTheme.titleMedium),
+            ],
+            for (final t in transfers) TransferCard(t),
           ],
-          for (final t in transfers) TransferCard(t),
-        ],
+        ),
       ),
     );
   }
+
+  /// Linux: files or folders dropped on the window wait for a device tap.
+  Widget dropZone(Widget child) => Platform.isLinux
+      ? DropTarget(
+          onDragDone: (d) {
+            if (d.files.isEmpty) return;
+            setState(() => pending = [for (final f in d.files) uft.Pick(path: f.path)]);
+          },
+          child: child,
+        )
+      : child;
 }
 
 class TransferCard extends StatelessWidget {

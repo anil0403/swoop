@@ -46,6 +46,14 @@ const RECONNECT_FOR: Duration = Duration::from_secs(120);
 
 static STATE: OnceLock<State> = OnceLock::new();
 static NEXT_OFFER: AtomicI64 = AtomicI64::new(1);
+static RECEIVING: AtomicBool = AtomicBool::new(true);
+
+/// Off: every offer is declined without asking.
+// ponytail: still answers discovery, so senders see it and get "declined"; hide it when that confuses people.
+#[flutter_rust_bridge::frb(sync)]
+pub fn set_receiving(enabled: bool) {
+    RECEIVING.store(enabled, Ordering::Relaxed);
+}
 
 fn state() -> Result<&'static State, String> {
     STATE.get().ok_or_else(|| "init was not called".to_string())
@@ -399,6 +407,9 @@ fn incoming(ev: RecvEvent, meters: &Mutex<HashMap<u64, Meter>>) -> Incoming {
 /// Trusted devices pass; others wait for the user's `answer`.
 fn ask(o: &Offer, sink: &StreamSink<Incoming>) -> bool {
     let Some(st) = STATE.get() else { return false };
+    if !RECEIVING.load(Ordering::Relaxed) {
+        return false;
+    }
     if st.trust.lock().unwrap().contains(&o.peer_fp)
         || st
             .accepted

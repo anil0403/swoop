@@ -13,7 +13,7 @@ part 'direct.freezed.dart';
 // These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `clone`, `clone`, `fmt`, `fmt`
 
 /// Advertises this device (`fp`: its fingerprint, the first 16 hex are sent), serves the invite characteristic and
-/// scans for other uft devices, until the app exits or the stream is dropped. Call once. Fails when Bluetooth is
+/// scans for other Swoop devices, until the app exits or the stream is dropped. Call once. Fails when Bluetooth is
 /// missing or off.
 Stream<BleEvent> bleStart({required String fp, required String name}) =>
     RustLib.instance.api.crateApiDirectBleStart(fp: fp, name: name);
@@ -40,7 +40,7 @@ Future<void> leaveWifi() => RustLib.instance.api.crateApiDirectLeaveWifi();
 sealed class BleEvent with _$BleEvent {
   const BleEvent._();
 
-  /// A uft device advertising nearby. `id` is its Bluetooth address, `fp` the first 16 hex of its fingerprint.
+  /// A Swoop device advertising nearby. `id` is its Bluetooth address, `fp` the first 16 hex of its fingerprint.
   const factory BleEvent.seen({
     required String id,
     required String name,
