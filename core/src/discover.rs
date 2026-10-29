@@ -258,11 +258,17 @@ fn interfaces() -> Vec<Iface> {
 
 // ponytail: Ethernet > Wi-Fi > rest; ranking Wi-Fi bands (6 > 5 > 2.4 GHz) needs nl80211 link
 // info (Phase 6 diagnostics).
+// Windows names adapters "Ethernet 2", "Wi-Fi" or "WLAN"; virtual ones "vEthernet (WSL)".
 pub(crate) fn rank(name: &str) -> u8 {
     let sys = Path::new("/sys/class/net").join(name);
-    if sys.join("wireless").exists() || name.starts_with("wl") {
+    if sys.join("wireless").exists() || ["wl", "Wi-Fi", "WLAN"].iter().any(|p| name.starts_with(p))
+    {
         1
-    } else if sys.join("device").exists() || name.starts_with("eth") || name.starts_with("en") {
+    } else if sys.join("device").exists()
+        || ["eth", "en", "Ethernet"]
+            .iter()
+            .any(|p| name.starts_with(p))
+    {
         0
     } else {
         2
@@ -297,6 +303,18 @@ fn sweep(ip: Ipv4Addr, prefix: u8) -> impl Iterator<Item = Ipv4Addr> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn windows_ranks() {
+        for (name, r) in [
+            ("Ethernet 2", 0),
+            ("Wi-Fi", 1),
+            ("WLAN", 1),
+            ("vEthernet (WSL)", 2),
+        ] {
+            assert_eq!(rank(name), r, "{name}");
+        }
+    }
 
     fn dev() -> Device {
         Device {
