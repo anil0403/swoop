@@ -113,6 +113,14 @@ class MainActivity : FlutterActivity() {
                     busy(call.arguments as Boolean)
                     result.success(null)
                 }
+                "progress" -> {
+                    // Dart ints arrive as Integer or Long depending on size.
+                    TransferService.progress(
+                        this, call.argument<String>("title"),
+                        call.argument<Number>("done")?.toLong() ?: 0, call.argument<Number>("total")?.toLong() ?: 0,
+                    )
+                    result.success(null)
+                }
                 "bleStart" -> direct.bleStart(call.argument<String>("fp")!!, result)
                 "bleInvite" -> direct.bleInvite(call.argument<String>("id")!!, call.argument<String>("json")!!, result)
                 "host" -> direct.host(result)
