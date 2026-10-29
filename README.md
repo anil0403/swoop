@@ -177,7 +177,7 @@ swoop bench --size 4G               # measure this machine's engine speed
 the same pairing code; answer `a` to always trust that device. The first `send` to a device asks you to check
 its code too. A name that several devices answer to, or that now belongs to a different device, is refused.
 Give the fingerprint or `swoop://` link instead, which also skips the question (useful in scripts).
-`swoop forget NAME` forgets a device you sent to or trusted.
+`swoop known` lists the devices you sent to or trusted; `swoop forget NAME` forgets one.
 
 ## Build from source
 
