@@ -2,6 +2,7 @@ package dev.uft.uft
 
 import android.Manifest
 import android.content.Intent
+import android.media.MediaScannerConnection
 import android.net.ConnectivityManager
 import android.net.Network
 import android.net.NetworkCapabilities
@@ -17,6 +18,7 @@ import android.provider.DocumentsContract
 import android.provider.DocumentsContract.Document
 import android.provider.OpenableColumns
 import android.provider.Settings
+import android.system.Os
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.EventChannel
@@ -121,6 +123,10 @@ class MainActivity : FlutterActivity() {
                     )
                     result.success(null)
                 }
+                "scan" -> {
+                    scan(call.argument<String>("dir")!!, call.argument<Number>("since")!!.toLong())
+                    result.success(null)
+                }
                 "bleStart" -> direct.bleStart(call.argument<String>("fp")!!, result)
                 "bleInvite" -> direct.bleInvite(call.argument<String>("id")!!, call.argument<String>("json")!!, result)
                 "host" -> direct.host(result)
@@ -164,6 +170,19 @@ class MainActivity : FlutterActivity() {
             "mbps" to mbps.takeIf { it > 0 },
             "dbm" to w.rssi.takeIf { it in -126..-1 },
         )
+    }
+
+    /**
+     * Shows files received since [since] (epoch ms) under [dir] in the Gallery; Android 8-10 don't index
+     * them by themselves. By ctime: the receiver gives each file the sender's mtime, finalizing sets ctime.
+     */
+    private fun scan(dir: String, since: Long) {
+        Thread {
+            val files = File(dir).walk()
+                .filter { it.isFile && runCatching { Os.stat(it.path).st_ctime >= since / 1000 }.getOrDefault(false) }
+                .map { it.path }.toList()
+            if (files.isNotEmpty()) MediaScannerConnection.scanFile(applicationContext, files.toTypedArray(), null, null)
+        }.start()
     }
 
     private fun deviceName(): String =
