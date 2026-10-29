@@ -383,7 +383,9 @@ class HomeState extends State<Home> {
         if (t != null) {
           setState(() {
             t.done = t.total;
-            t.result = 'Received ${size(e.bytes)} in ${duration(e.secs)} · saved to $shortDir';
+            t.result =
+                'Received ${size(e.bytes)} · '
+                'avg ${speed(e.secs > 0 ? e.bytes / e.secs : t.peak)} · peak ${speed(t.peak)}';
           });
           // Photos and videos show up in the Gallery.
           if (Platform.isAndroid) {
@@ -576,11 +578,7 @@ class HomeState extends State<Home> {
               case uft.Outgoing_Done():
                 t
                   ..done = t.total
-                  ..result =
-                      'Sent ${size(e.bytes)} in ${duration(e.secs)} · '
-                      'avg ${speed(e.avg)} · peak ${speed(e.peak)}'
-                      '${e.resumed > 0 ? ' · ${size(e.resumed)} already there' : ''}'
-                      '${[?uft.diagnose(fingerprint: p.fingerprint, speed: e.avg)].map((d) => '\n$d').join()}';
+                  ..result = 'Sent ${size(e.bytes)} · avg ${speed(e.avg)} · peak ${speed(e.peak)}';
               case uft.Outgoing_Reconnecting():
                 t.note = 'Connection lost (${e.error}); looking for ${p.name} again…';
               case uft.Outgoing_Failed():
