@@ -248,6 +248,9 @@ impl Target {
 
 #[derive(Serialize, Deserialize)]
 struct PartState {
+    /// The device whose chunks these are: another one's are never spliced in.
+    #[serde(default)]
+    peer: String,
     size: u64,
     mtime: i64,
     chunk_size: u64,
@@ -382,6 +385,7 @@ impl Session {
         for (i, done) in &snap {
             let t = &self.files[*i];
             let ps = PartState {
+                peer: self.peer_fp.clone(),
                 size: t.size,
                 mtime: t.mtime,
                 chunk_size: self.chunk_size,
@@ -510,8 +514,8 @@ fn unix_secs(t: SystemTime) -> i64 {
 }
 
 /// Chunks of `t` already on disk: all if the final file matches, else those in a
-/// matching state file, else none.
-fn resume(t: &Target, chunk_size: u64) -> (bool, Vec<u64>) {
+/// matching state file `peer` wrote, else none.
+fn resume(t: &Target, chunk_size: u64, peer: &str) -> (bool, Vec<u64>) {
     let n = chunk_count(t.size, chunk_size);
     if let Ok(m) = fs::metadata(&t.dest)
         && m.is_file()
@@ -527,6 +531,7 @@ fn resume(t: &Target, chunk_size: u64) -> (bool, Vec<u64>) {
     match serde_json::from_slice::<PartState>(&raw) {
         Ok(ps)
             if t.part.is_file()
+                && ps.peer == peer
                 && (ps.size, ps.mtime, ps.chunk_size) == (t.size, t.mtime, chunk_size) =>
         {
             let mut done: Vec<u64> = ps.done.into_iter().filter(|&i| i < n).collect();
@@ -558,7 +563,10 @@ fn plan(ctx: &Ctx, peer_fp: String, chunk_size: u64, files: &[FileEntry]) -> Res
     let mut chunks = 0u64;
     let mut targets = Vec::with_capacity(files.len());
     for f in files {
-        let rel = safe_rel_path(&f.path).ok_or_else(|| format!("unsafe path {:?}", f.path))?;
+        let rel = safe_rel_path(&f.path)
+            // Swoop's own part and state names: a received one could pass for another transfer's.
+            .filter(|_| !f.path.ends_with(".uftpart") && !f.path.ends_with(".uftpart.state"))
+            .ok_or_else(|| format!("unsafe path {:?}", f.path))?;
         if !seen.insert(rel.clone()) {
             return Err(format!("duplicate path {:?}", f.path));
         }
@@ -589,7 +597,7 @@ fn plan(ctx: &Ctx, peer_fp: String, chunk_size: u64, files: &[FileEntry]) -> Res
         let (complete, h) = if ctx.null_sink {
             (false, Vec::new())
         } else {
-            resume(t, chunk_size)
+            resume(t, chunk_size, &peer_fp)
         };
         let mut done = vec![false; n as usize];
         for &c in &h {
@@ -1123,6 +1131,10 @@ mod tests {
             offer(addr, 5, CS, &[f("x", 1), f("x", 1)]).1,
             Msg::Reject { .. }
         ));
+        assert!(matches!(
+            offer(addr, 7, CS, &[f("a/x.uftpart.state", 1)]).1,
+            Msg::Reject { .. }
+        ));
         assert!(!dir.exists());
     }
 
@@ -1165,6 +1177,7 @@ mod tests {
         }
         fs::write(dir.join("r.bin.uftpart"), part).unwrap();
         let ps = PartState {
+            peer: "peer".into(),
             size,
             mtime: files[0].mtime,
             chunk_size: CS,
