@@ -251,7 +251,12 @@ class HomeState extends State<Home> {
       }
       final m = await uft.init(configDir: config.path, name: name);
       savedDir = File('${config.path}/save_dir');
-      final saved = savedDir.existsSync() ? savedDir.readAsStringSync().trim() : '';
+      var saved = '';
+      try {
+        if (savedDir.existsSync()) saved = savedDir.readAsStringSync().trim();
+      } catch (_) {
+        // Unreadable: the default it is.
+      }
       // A picked folder that's gone or read-only (an unplugged drive) falls back to the default.
       final use = saved.isNotEmpty && await writable(saved) ? saved : d;
       setState(() {
@@ -384,7 +389,8 @@ class HomeState extends State<Home> {
         setState(() => transfers.insert(0, incoming[e.session] = t));
       case uft.Incoming_Progress():
         // One that started before the app was reopened (Android keeps it going when swiped away).
-        final t = incoming[e.session] ??= Transfer('Incoming transfer', sending: false);
+        final t = incoming[e.session] ??= Transfer('Incoming transfer', sending: false)
+          ..folder = dir;
         setState(() {
           if (!transfers.contains(t)) transfers.insert(0, t);
           t.done = e.done;
@@ -515,15 +521,20 @@ class HomeState extends State<Home> {
       ),
     );
     if (folder == null) return [];
-    if (Platform.isAndroid) {
-      // [fd path, name] pairs; the descriptors stay open until the send ends.
-      final got = await android.invokeListMethod<List<Object?>>('pick', folder) ?? [];
-      return [for (final x in got) uft.Pick(path: x[0] as String, name: x[1] as String)];
+    try {
+      if (Platform.isAndroid) {
+        // [fd path, name] pairs; the descriptors stay open until the send ends.
+        final got = await android.invokeListMethod<List<Object?>>('pick', folder) ?? [];
+        return [for (final x in got) uft.Pick(path: x[0] as String, name: x[1] as String)];
+      }
+      final paths = folder
+          ? [?await getDirectoryPath()]
+          : (await openFiles()).map((f) => f.path).toList();
+      return [for (final x in paths) uft.Pick(path: x)];
+    } catch (e) {
+      setState(() => error = "Couldn't pick files: ${e is PlatformException ? e.message : e}");
+      return [];
     }
-    final paths = folder
-        ? [?await getDirectoryPath()]
-        : (await openFiles()).map((f) => f.path).toList();
-    return [for (final x in paths) uft.Pick(path: x)];
   }
 
   /// Tells Android while something transfers, so it keeps the CPU and Wi-Fi at full speed.
@@ -1121,9 +1132,15 @@ class HomeState extends State<Home> {
     );
     if (choice == null) return;
     if (!choice) return useDir(defaultDir!);
-    final picked = Platform.isAndroid
-        ? await android.invokeMethod<String>('pickDir')
-        : await getDirectoryPath();
+    final String? picked;
+    try {
+      picked = Platform.isAndroid
+          ? await android.invokeMethod<String>('pickDir')
+          : await getDirectoryPath();
+    } catch (e) {
+      setState(() => error = "This device has no folder picker.");
+      return;
+    }
     if (picked == null) return;
     if (picked.isEmpty || !await writable(picked)) {
       setState(
@@ -1138,14 +1155,26 @@ class HomeState extends State<Home> {
 
   /// Shows `d` in the file manager.
   Future<void> openFolder(String d) async {
+    void fail(String why) {
+      if (mounted) setState(() => error = "Couldn't open ${short(d)}: $why");
+    }
+
+    // The save folder is made again (files go there anyway); a received transfer's may be gone.
+    if (d == dir) await writable(d);
+    if (!Directory(d).existsSync()) return fail('it no longer exists.');
     try {
       if (Platform.isAndroid) {
         await android.invokeMethod('openDir', d);
-      } else if ((await Process.run('xdg-open', [d])).exitCode != 0) {
-        throw 'xdg-open failed';
+        return;
       }
+      final p = await Process.start('xdg-open', [d]);
+      p.stdout.drain<void>();
+      p.stderr.drain<void>();
+      // Some file managers keep xdg-open running until they close: still going = opened.
+      final code = await p.exitCode.timeout(const Duration(seconds: 5), onTimeout: () => 0);
+      if (code != 0) fail('no file manager handled it.');
     } catch (_) {
-      setState(() => error = "Couldn't open ${short(d)}: no file manager handled it.");
+      fail('no file manager handled it.');
     }
   }
 

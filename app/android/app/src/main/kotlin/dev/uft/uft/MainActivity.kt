@@ -122,8 +122,14 @@ class MainActivity : FlutterActivity() {
                 "pickDir" -> {
                     pickingDir?.success(null)
                     pickingDir = result
-                    @Suppress("DEPRECATION")
-                    startActivityForResult(Intent(Intent.ACTION_OPEN_DOCUMENT_TREE), pickDir)
+                    try {
+                        @Suppress("DEPRECATION")
+                        startActivityForResult(Intent(Intent.ACTION_OPEN_DOCUMENT_TREE), pickDir)
+                    } catch (e: Exception) {
+                        // No folder picker (some TVs and locked-down phones); answered here, not again later.
+                        pickingDir = null
+                        result.error("pickDir", e.message, null)
+                    }
                 }
                 "release" -> {
                     synchronized(fds) { (call.arguments as List<*>).forEach { fds.remove(it)?.close() } }
@@ -268,8 +274,14 @@ class MainActivity : FlutterActivity() {
             Intent(Intent.ACTION_OPEN_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE).setType("*/*")
                 .putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true)
         }
-        @Suppress("DEPRECATION")
-        startActivityForResult(i, pick)
+        try {
+            @Suppress("DEPRECATION")
+            startActivityForResult(i, pick)
+        } catch (e: Exception) {
+            // No picker app: answered here, so the next pick doesn't answer it twice.
+            picking = null
+            result.error("pick", e.message, null)
+        }
     }
 
     @Deprecated("FlutterActivity has no ActivityResult API")
@@ -278,7 +290,7 @@ class MainActivity : FlutterActivity() {
         super.onActivityResult(requestCode, resultCode, data)
         if (requestCode == pickDir) {
             // null: cancelled; "": a folder with no file path.
-            pickingDir?.success(data?.data?.takeIf { resultCode == RESULT_OK }?.let { treePath(it) ?: "" })
+            pickingDir?.success(data?.data?.takeIf { resultCode == RESULT_OK }?.let { runCatching { treePath(it) }.getOrNull() ?: "" })
             pickingDir = null
             return
         }
@@ -340,6 +352,11 @@ class MainActivity : FlutterActivity() {
      */
     /** Shows the folder at [path] in the Files app, or the Downloads app where Files can't open a folder. */
     private fun openDir(path: String) {
+        // Files on Android 8 (and maybe up to 10) crashes on a folder link, without telling us: seen on API 26, fine on 37.
+        if (Build.VERSION.SDK_INT < 30) {
+            startActivity(Intent(DownloadManager.ACTION_VIEW_DOWNLOADS))
+            return
+        }
         // The reverse of treePath: /storage/emulated/0/X -> "primary:X", /storage/VOL/X -> "VOL:X".
         val root = Environment.getExternalStorageDirectory().path
         val id = if (path == root || path.startsWith("$root/")) {
@@ -351,7 +368,7 @@ class MainActivity : FlutterActivity() {
         try {
             startActivity(Intent(Intent.ACTION_VIEW).setDataAndType(uri, Document.MIME_TYPE_DIR))
         } catch (e: Exception) {
-            startActivity(Intent(DownloadManager.ACTION_VIEW_DOWNLOADS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+            startActivity(Intent(DownloadManager.ACTION_VIEW_DOWNLOADS))
         }
     }
 

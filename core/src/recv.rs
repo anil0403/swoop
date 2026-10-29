@@ -687,7 +687,8 @@ fn control<S: Read + Write>(
         });
         if !sess.null_sink {
             for d in &dirs {
-                fs::create_dir_all(sess.dir.join(d))?;
+                // Best effort: one that clashes with an existing file shouldn't cost the files.
+                let _ = fs::create_dir_all(sess.dir.join(d));
             }
         }
         run(&mut s, ctx, id, &sess, now, resumed, total, start)
