@@ -4,6 +4,6 @@ Name=Swoop
 GenericName=File transfer
 Comment=Send files to nearby devices, offline
 Exec=swoop-app
-Icon=document-send
+Icon=io.github.anil0403.swoop
 Terminal=false
 Categories=Network;FileTransfer;

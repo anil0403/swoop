@@ -67,6 +67,7 @@ jobs:
           cp -r build/linux/*/release/bundle ../pkg/lib/swoop
           ln -s ../lib/swoop/swoop-app ../pkg/bin/swoop-app
           cp linux/io.github.anil0403.swoop.desktop ../pkg/share/applications/
+          install -Dm644 linux/io.github.anil0403.swoop.svg -t ../pkg/share/icons/hicolor/scalable/apps
       - name: package
         run: cd pkg && tar -czf ../dist/${{ matrix.name }}.tar.gz *
       - name: appimage
@@ -75,8 +76,7 @@ jobs:
           arch=${{ startsWith(matrix.target, 'x86_64') && 'x86_64' || 'aarch64' }}
           mkdir -p AppDir/usr && cp -r pkg/* AppDir/usr/
           ln -s usr/bin/swoop-app AppDir/AppRun
-          sed 's/^Icon=.*/Icon=swoop/' pkg/share/applications/io.github.anil0403.swoop.desktop > AppDir/swoop.desktop
-          cp app/android/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png AppDir/swoop.png
+          cp pkg/share/applications/io.github.anil0403.swoop.desktop pkg/share/icons/hicolor/scalable/apps/io.github.anil0403.swoop.svg AppDir/
           curl -fsSLo "$RUNNER_TEMP/appimagetool" \
             "https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-$arch.AppImage"
           chmod +x "$RUNNER_TEMP/appimagetool"
@@ -149,7 +149,6 @@ jobs:
         with:
           name: swoop-linux-x86_64
           path: packaging/flatpak
-      - run: cp app/android/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png packaging/flatpak/icon.png
       - uses: flathub-infra/flatpak-github-actions/flatpak-builder@master
         with:
           manifest-path: packaging/flatpak/io.github.anil0403.swoop.yml

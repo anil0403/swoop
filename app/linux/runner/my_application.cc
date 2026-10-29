@@ -53,6 +53,8 @@ static void my_application_activate(GApplication* application) {
   }
 
   gtk_window_set_default_size(window, 1280, 720);
+  // X11 shows this in the title bar and task switcher; Wayland takes it from the desktop file.
+  gtk_window_set_default_icon_name("io.github.anil0403.swoop");
 
   g_autoptr(FlDartProject) project = fl_dart_project_new();
   fl_dart_project_set_dart_entrypoint_arguments(
