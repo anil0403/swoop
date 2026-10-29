@@ -290,8 +290,16 @@ impl Session {
         if blake3::hash(data) != *hash {
             return Err(bad("chunk hash mismatch"));
         }
-        if self.st.lock().unwrap().done[fi][index as usize] {
-            return Ok(());
+        {
+            // Checked before open_part too: a stream still running after the session failed would
+            // otherwise leave a new, preallocated .uftpart behind.
+            let st = self.st.lock().unwrap();
+            if let Some(e) = &st.error {
+                return Err(io::Error::other(e.clone()));
+            }
+            if st.done[fi][index as usize] {
+                return Ok(());
+            }
         }
         if !self.null_sink {
             if cache.as_ref().is_none_or(|(f, _)| *f != file) {
