@@ -28,9 +28,9 @@ struct State {
     name: String,
     trust: Mutex<Trust>,
     offers: Mutex<HashMap<i64, Sender<(bool, bool)>>>,
-    /// Devices the user accepted while the app runs: a transfer resuming after a dropped
-    /// connection isn't asked about again.
-    accepted: Mutex<HashMap<String, Instant>>,
+    /// Offers the user accepted while the app runs, by device, file count and size: the same
+    /// transfer resuming after a dropped connection isn't asked about again, a new one is.
+    accepted: Mutex<HashMap<(String, usize, u64), Instant>>,
     /// Running sends by the app's id, for `cancel`.
     sends: Mutex<HashMap<i64, Arc<AtomicBool>>>,
     /// This device's link and when it was read; Android's comes from the app (`set_link`).
@@ -41,6 +41,10 @@ struct State {
 
 /// How long an accepted device's resumed offers pass without asking.
 const ACCEPTED_FOR: Duration = Duration::from_secs(30 * 60);
+/// Devices one scan lists.
+const MAX_PEERS: usize = 64;
+/// Offers waiting for the user at once.
+const MAX_ASKING: usize = 3;
 /// How long a send keeps trying to reach the receiver again after the connection drops.
 const RECONNECT_FOR: Duration = Duration::from_secs(120);
 
@@ -261,16 +265,18 @@ fn start_scan(secs: u32, sink: StreamSink<Vec<Peer>>) -> Result<(), String> {
             if f.device.fp == me {
                 return false;
             }
-            if let (Some(l), Ok(st)) = (&f.device.link, state()) {
-                st.links
-                    .lock()
-                    .unwrap()
-                    .insert(f.device.fp.clone(), l.clone());
-            }
             let p = peer(f, &me);
-            match list.iter_mut().find(|x| x.fingerprint == p.fingerprint) {
-                Some(x) => *x = p,
-                None => list.push(p),
+            match list.iter().position(|x| x.fingerprint == p.fingerprint) {
+                Some(i) => list[i] = p,
+                None if list.len() < MAX_PEERS => list.push(p),
+                // A flood of made-up devices doesn't grow the list or slow the screen.
+                None => return false,
+            }
+            if let (Some(l), Ok(st)) = (&f.device.link, state()) {
+                let mut links = st.links.lock().unwrap();
+                if links.len() < MAX_PEERS * 4 || links.contains_key(&f.device.fp) {
+                    links.insert(f.device.fp.clone(), l.clone());
+                }
             }
             // Stop when nobody listens anymore.
             sink.add(list.clone()).is_err()
@@ -465,14 +471,21 @@ fn ask(o: &Offer, sink: &StreamSink<Incoming>) -> bool {
             .accepted
             .lock()
             .unwrap()
-            .get(&o.peer_fp)
+            .get(&(o.peer_fp.clone(), o.files, o.total))
             .is_some_and(|t| t.elapsed() < ACCEPTED_FOR)
     {
         return true;
     }
     let id = NEXT_OFFER.fetch_add(1, Ordering::Relaxed);
     let (tx, rx) = channel();
-    st.offers.lock().unwrap().insert(id, tx);
+    {
+        let mut offers = st.offers.lock().unwrap();
+        // A device sending offer after offer would stack dialogs; past a few, the rest are declined.
+        if offers.len() >= MAX_ASKING {
+            return false;
+        }
+        offers.insert(id, tx);
+    }
     let shown = sink
         .add(Incoming::Offer {
             id,
@@ -494,7 +507,7 @@ fn ask(o: &Offer, sink: &StreamSink<Incoming>) -> bool {
             st.accepted
                 .lock()
                 .unwrap()
-                .insert(o.peer_fp.clone(), Instant::now());
+                .insert((o.peer_fp.clone(), o.files, o.total), Instant::now());
             if always {
                 let _ = st.trust.lock().unwrap().add(&o.peer_fp, &o.peer_name);
             }
