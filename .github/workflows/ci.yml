@@ -55,6 +55,19 @@ jobs:
       - run: cargo clippy --locked --all-targets
       - run: cargo fmt --check
 
+  macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: core
+      - run: cargo test --locked
+      - run: cargo clippy --locked --all-targets
+
   android:
     runs-on: ubuntu-latest
     steps:
@@ -111,6 +124,26 @@ jobs:
           flutter-version: ${{ steps.flutter.outputs.version }}
           cache: true
       - run: flutter build windows --release
+
+  apple-app:
+    runs-on: macos-latest
+    defaults:
+      run:
+        working-directory: app
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          # The macOS app is universal (Apple silicon and Intel); iOS is arm64.
+          targets: x86_64-apple-darwin, aarch64-apple-ios
+      - run: echo "version=$(cat .flutter-version)" >> "$GITHUB_OUTPUT"
+        id: flutter
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ steps.flutter.outputs.version }}
+          cache: true
+      - run: flutter build macos --release
+      - run: flutter build ios --release --no-codesign
 
   apk:
     runs-on: ubuntu-latest
