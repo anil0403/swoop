@@ -180,7 +180,9 @@ hand** (Actions ▸ version ▸ Run workflow, with `bump`: `auto`, `major`, `min
    and commits that change only docs, `bench/`, `.github/` or `LICENSE` files, count for nothing.
 3. On a push with nothing new that counts since the newest tag (betas included): stop.
 4. If the last finished CI run (`ci.yml`) on main failed: stop with an error. Otherwise the commit that run tested is
-   the one that gets the version, so a tag never points at a commit that didn't pass CI.
+   the one that gets the version, so a tag never points at a commit that didn't pass CI. If a release already
+   contains that commit, stop: a release commit is pushed by a workflow, which starts no CI run, so until the next
+   push CI's last commit is the one before it.
 5. Pick the version from the subjects since `last` (`bump` other than `auto` picks the number by hand):
    - any `type!:` or `BREAKING` → `MAJOR+1` → **release**
    - else any `feat:` → `MINOR+1` → **release**
