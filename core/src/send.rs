@@ -248,12 +248,14 @@ fn session(
         on_progress(&snap, streams);
         let secs = start.elapsed().as_secs_f64();
         let bytes = total - resumed;
+        let avg = bytes as f64 / secs;
         Ok(SendStats {
             bytes,
             resumed,
             secs,
-            avg: bytes as f64 / secs,
-            peak: snap.peak,
+            avg,
+            // The meter has no peak in its first seconds; a transfer done by then peaked at least at avg.
+            peak: snap.peak.max(avg),
             streams,
         })
     })

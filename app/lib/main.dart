@@ -416,9 +416,8 @@ class HomeState extends State<Home> {
         if (t != null) {
           setState(() {
             t.done = t.total;
-            t.result =
-                'Received ${size(e.bytes)} · '
-                'avg ${speed(e.secs > 0 ? e.bytes / e.secs : t.peak)} · peak ${speed(t.peak)}';
+            final avg = e.secs > 0 ? e.bytes / e.secs : t.peak;
+            t.result = 'Received ${size(e.bytes)} · avg ${speed(avg)} · peak ${speed(t.peak > avg ? t.peak : avg)}';
           });
           // Photos and videos show up in the Gallery.
           if (Platform.isAndroid) {
