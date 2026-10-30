@@ -5,13 +5,13 @@
 <h1 align="center">Swoop</h1>
 
 <p align="center">
-  <b>Send files between Linux, Windows and Android at the full speed of your local network.</b><br>
+  <b>Send files between Linux, Windows, macOS, Android and iOS at the full speed of your local network.</b><br>
   Offline. Zero setup. No accounts, no cloud, no cables.
 </p>
 
 <p align="center">
   <a href="https://github.com/anil0403/swoop/releases/latest"><img alt="Latest release" src="https://img.shields.io/github/v/release/anil0403/swoop?color=1D5FD1&label=release"></a>
-  <img alt="Platforms" src="https://img.shields.io/badge/platforms-Linux%20%7C%20Windows%20%7C%20Android-1D5FD1">
+  <img alt="Platforms" src="https://img.shields.io/badge/platforms-Linux%20%7C%20Windows%20%7C%20macOS%20%7C%20Android%20%7C%20iOS-1D5FD1">
   <a href="LICENSE"><img alt="MIT license" src="https://img.shields.io/badge/license-MIT-1D5FD1"></a>
 </p>
 
@@ -55,7 +55,7 @@ carry.
 | **Private and secure** | TLS 1.3 with per-device keys. The first time a new device sends, both screens show the same 6-digit code to confirm. |
 | **Resumes** | A dropped or cancelled transfer continues from where it stopped, with every chunk checked (BLAKE3). |
 | **Any size, any number** | Single huge files or folders of thousands of small ones. Swoop checks free space before it starts. |
-| **Fits in** | Android share sheet, drag and drop on Linux and Windows, a QR code for the phone camera, progress in the notification bar, photos straight into the Gallery. |
+| **Fits in** | Android share sheet, drag and drop on Linux, Windows and macOS, a QR code for the phone camera, progress in the notification bar, photos straight into the Gallery. |
 | **Light and dark** | A clean interface that follows your system theme, on phones and on wide desktop windows. |
 
 ## Supported systems
@@ -64,6 +64,8 @@ carry.
 |---|---|---|
 | **Linux** | x86_64 or aarch64 (64-bit ARM), glibc 2.35+ (Ubuntu 22.04+, Debian 12+, Fedora 36+, Arch), GTK 3 | App + `swoop` command |
 | **Windows** | Windows 10 or 11, x86_64 | App + `swoop` command |
+| **macOS** | macOS 12 or newer, Apple silicon or Intel | App + `swoop` command |
+| **iOS** | iPhone or iPad with iOS 15 or newer, sideloaded | App |
 | **Android** | Android 8.0 or newer | App for 64-bit phones, and one for older 32-bit phones |
 | **Termux** | 64-bit ARM phone | `swoop` command |
 
@@ -89,6 +91,11 @@ downloads.
 
 **Windows:** [swoop-windows-x86_64.zip](https://github.com/anil0403/swoop/releases/latest/download/swoop-windows-x86_64.zip)
 (app + `swoop` command, x86_64)
+
+**macOS:** [swoop-macos.zip](https://github.com/anil0403/swoop/releases/latest/download/swoop-macos.zip)
+(app + `swoop` command, Apple silicon and Intel)
+
+**iOS:** [swoop-ios.ipa](https://github.com/anil0403/swoop/releases/latest/download/swoop-ios.ipa) (to sideload)
 
 **Termux:** [swoop-android-aarch64.tar.gz](https://github.com/anil0403/swoop/releases/latest/download/swoop-android-aarch64.tar.gz)
 
@@ -134,6 +141,35 @@ flatpak install --user swoop-x86_64.flatpak
 > The direct Wi-Fi link and finding devices over Bluetooth aren't on Windows yet, so the devices need a shared
 > network (Wi-Fi, Ethernet or a hotspot).
 
+### macOS
+
+1. Download [swoop-macos.zip](https://github.com/anil0403/swoop/releases/latest/download/swoop-macos.zip); Safari
+   unzips it into Downloads.
+2. Move **Swoop** to **Applications** and open it. The `swoop` command is next to it; move it into a folder on your
+   `PATH`, such as `/usr/local/bin`, to use it from any terminal.
+3. Allow Swoop to find devices on your local network when macOS asks.
+
+> The app isn't signed by Apple yet, so macOS won't open it the first time. Open **System Settings → Privacy &
+> Security** and click **Open Anyway** next to Swoop, or run `xattr -dr com.apple.quarantine /Applications/Swoop.app`.
+
+> The direct Wi-Fi link and finding devices over Bluetooth aren't on macOS yet, so the devices need a shared
+> network (Wi-Fi, Ethernet or a hotspot).
+
+### iOS
+
+Swoop isn't on the App Store, so the iPhone app is installed with a sideloading tool such as
+[AltStore](https://altstore.io) or [Sideloadly](https://sideloadly.io), which signs it with your own Apple ID:
+
+1. Download [swoop-ios.ipa](https://github.com/anil0403/swoop/releases/latest/download/swoop-ios.ipa).
+2. Install it with the sideloading tool (with a free Apple ID, refresh it every 7 days).
+3. Open Swoop and allow it to find devices on your local network.
+
+> Received files are in the **Files** app, under **On My iPhone → Swoop**. Keep Swoop open while files transfer:
+> the screen stays on, but iOS pauses apps in the background.
+
+> The direct Wi-Fi link and finding devices over Bluetooth aren't on iOS. On a big network (larger than a /24),
+> connect by address or with the QR code.
+
 ### Android
 
 1. On the phone, open [swoop-android.apk](https://github.com/anil0403/swoop/releases/latest/download/swoop-android.apk)
@@ -161,7 +197,7 @@ Check any install with `swoop version`.
 ## Getting started
 
 1. **Open Swoop on both devices.** On the same network they show up in each other's list within a few seconds.
-2. **Send.** Tap the other device and pick files or a folder. On Linux and Windows you can also drop files onto
+2. **Send.** Tap the other device and pick files or a folder. On Linux, Windows and macOS you can also drop files onto
    the window; on Android, use **Share → Swoop** from any app. The first time you send to a device, Swoop shows its
    pairing code and sends nothing until you tap **Send**. After that the device is known and marked with a check. If
    another device shows up with the same name, it's flagged as *not the one you sent to before*. Tap the check
@@ -170,8 +206,8 @@ Check any install with `swoop version`.
    **Always accept** to trust that device from now on. The code is new every time, so a code that doesn't match
    means someone else is answering: tap **Decline**. A device on Swoop 2.6.1 or older can't pair anymore,
    only send to devices that already trust it, so update both.
-4. **Done.** Files land in `Downloads/Swoop` (Linux), `Downloads\Swoop` (Windows) or `Download/Swoop` (Android).
-   Photos and videos appear in the Gallery.
+4. **Done.** Files land in `Downloads/Swoop` (Linux and macOS), `Downloads\Swoop` (Windows), `Download/Swoop`
+   (Android, where photos and videos also appear in the Gallery) or **Files → On My iPhone → Swoop** (iOS).
 
 **Devices don't see each other?** Guest Wi-Fi and some office networks block discovery. Tap the **link icon** at
 the top of the app, then scan the QR code with the phone camera or type the address the other device shows.
@@ -195,7 +231,7 @@ After each transfer the card shows the size, the average speed and the peak spee
 
 ## Command line
 
-The `swoop` command comes with the Linux and Windows installs and works on its own: on servers, over SSH, or in
+The `swoop` command comes with the Linux, Windows and macOS installs and works on its own: on servers, over SSH, or in
 Termux.
 
 ```sh
@@ -256,6 +292,18 @@ flutter build linux --release   # -> build/linux/x64/release/bundle/swoop-app
 ```sh
 cd app
 flutter build windows --release   # -> build\windows\x64\runner\Release\swoop-app.exe
+```
+
+</details>
+
+<details>
+<summary><b>macOS and iOS apps</b> (a Mac with Xcode and CocoaPods, Flutter from <code>app/.flutter-version</code>, Rust stable)</summary>
+
+```sh
+rustup target add aarch64-apple-darwin x86_64-apple-darwin aarch64-apple-ios
+cd app
+flutter build macos --release             # -> build/macos/Build/Products/Release/Swoop.app
+flutter build ios --release --no-codesign # -> build/ios/iphoneos/Runner.app, to sign and sideload
 ```
 
 </details>
