@@ -1,4 +1,4 @@
-//! The few file operations that differ between Unix (Linux, Android) and Windows.
+//! The few file operations that differ between Linux (and Android), Apple's systems and Windows.
 
 use std::fs::File;
 use std::io;
@@ -51,15 +51,15 @@ impl FileExt for File {
 
 /// Hints that `f` will be read front to back.
 pub fn advise_sequential(f: &File) {
-    #[cfg(unix)]
+    #[cfg(any(target_os = "linux", target_os = "android"))]
     let _ = rustix::fs::fadvise(f, 0, None, rustix::fs::Advice::Sequential);
-    #[cfg(windows)]
+    #[cfg(not(any(target_os = "linux", target_os = "android")))]
     let _ = f;
 }
 
 /// Grows `f` to `size` bytes, reserving the space where the filesystem can.
 pub fn preallocate(f: &File, size: u64) -> io::Result<()> {
-    #[cfg(unix)]
+    #[cfg(any(target_os = "linux", target_os = "android"))]
     {
         use rustix::io::Errno;
         match rustix::fs::fallocate(f, rustix::fs::FallocateFlags::empty(), 0, size) {
@@ -67,14 +67,14 @@ pub fn preallocate(f: &File, size: u64) -> io::Result<()> {
             r => Ok(r?),
         }
     }
-    #[cfg(windows)]
+    #[cfg(not(any(target_os = "linux", target_os = "android")))]
     f.set_len(size)
 }
 
-/// Makes everything written under `dir` durable. Unix: one syncfs for the whole filesystem, so
-/// `files` aren't needed. Windows has no such call: each of `files` is flushed instead.
+/// Makes everything written under `dir` durable. Linux: one syncfs for the whole filesystem, so
+/// `files` aren't needed. Apple and Windows have no such call: each of `files` is flushed instead.
 pub fn sync(dir: &Path, files: &[&Path]) -> io::Result<()> {
-    #[cfg(unix)]
+    #[cfg(any(target_os = "linux", target_os = "android"))]
     {
         let _ = files;
         // Android shared storage (FUSE) sometimes says ENOENT, or EACCES (seen on API 37), for a
@@ -93,10 +93,10 @@ pub fn sync(dir: &Path, files: &[&Path]) -> io::Result<()> {
             r => r,
         }
     }
-    #[cfg(windows)]
+    #[cfg(not(any(target_os = "linux", target_os = "android")))]
     {
         let _ = dir;
-        // FlushFileBuffers needs a handle with write access.
+        // Windows' FlushFileBuffers needs a handle with write access; Apple's sync_all is F_FULLFSYNC.
         for f in files {
             std::fs::OpenOptions::new()
                 .write(true)
@@ -135,10 +135,21 @@ pub fn free_space(dir: &Path) -> Option<u64> {
 // f_type's integer type differs between targets.
 #[allow(clippy::unnecessary_cast)]
 pub fn is_fat(dir: &Path) -> bool {
-    #[cfg(unix)]
+    #[cfg(all(unix, not(target_vendor = "apple")))]
     {
         const MSDOS_SUPER_MAGIC: i64 = 0x4d44;
         rustix::fs::statfs(dir).is_ok_and(|s| s.f_type as i64 == MSDOS_SUPER_MAGIC)
+    }
+    // Apple numbers filesystem types as they're loaded: the name says it.
+    #[cfg(target_vendor = "apple")]
+    {
+        rustix::fs::statfs(dir).is_ok_and(|s| {
+            s.f_fstypename
+                .iter()
+                .take_while(|&&c| c != 0)
+                .map(|&c| c as u8)
+                .eq(*b"msdos")
+        })
     }
     #[cfg(windows)]
     {
