@@ -420,6 +420,15 @@ fn device_name() -> String {
         .find(|s| !s.is_empty())
         // Windows
         .or_else(|| std::env::var("COMPUTERNAME").ok().filter(|s| !s.is_empty()))
+        // macOS: the name the Mac was given, as the app shows it ("Anil's MacBook Pro").
+        .or_else(|| {
+            let o = std::process::Command::new("scutil")
+                .args(["--get", "ComputerName"])
+                .output()
+                .ok()?;
+            let s = String::from_utf8(o.stdout).ok()?.trim().to_string();
+            (o.status.success() && !s.is_empty()).then_some(s)
+        })
         .unwrap_or_else(|| "swoop".into())
 }
 
