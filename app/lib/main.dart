@@ -155,8 +155,23 @@ class Transfer {
 
 var _nextSend = 1;
 
-/// Android side (MainActivity.kt): device name, save folder, file picking, power locks.
+/// Android side (MainActivity.kt): device name, save folder, file picking, power locks. iOS's
+/// (AppDelegate.swift): device name, save folder, links opened, the Files app, the screen lock.
 const android = MethodChannel('uft');
+
+/// This computer's name: on macOS "Anil's MacBook Pro" rather than its host name.
+String hostName() {
+  if (Platform.isMacOS) {
+    try {
+      final r = Process.runSync('scutil', ['--get', 'ComputerName']);
+      final n = (r.stdout as String).trim();
+      if (r.exitCode == 0 && n.isNotEmpty) return n;
+    } catch (_) {
+      // The host name it is.
+    }
+  }
+  return Platform.localHostname;
+}
 
 String size(num b) {
   const units = ['B', 'KB', 'MB', 'GB', 'TB'];
@@ -246,14 +261,14 @@ class HomeState extends State<Home> {
     try {
       final config = await getApplicationSupportDirectory();
       final String d, name;
-      if (Platform.isAndroid) {
+      if (Platform.isAndroid || Platform.isIOS) {
         // Locks left by a transfer from before the app was reopened; one still running takes them again.
         android.invokeMethod('busy', false);
         final info = (await android.invokeMapMethod<String, String>('info'))!;
         (d, name) = (info['downloads']!, info['name']!);
       } else {
         final downloads = await getDownloadsDirectory() ?? await getApplicationDocumentsDirectory();
-        (d, name) = ('${downloads.path}${Platform.pathSeparator}Swoop', Platform.localHostname);
+        (d, name) = ('${downloads.path}${Platform.pathSeparator}Swoop', hostName());
       }
       final m = await uft.init(configDir: config.path, name: name);
       savedDir = File('${config.path}/save_dir');
@@ -281,7 +296,7 @@ class HomeState extends State<Home> {
           );
       scan();
       startBle();
-      if (Platform.isAndroid) {
+      if (Platform.isAndroid || Platform.isIOS) {
         android.setMethodCallHandler((c) async {
           if (c.method == 'intent') opened();
         });
@@ -359,8 +374,8 @@ class HomeState extends State<Home> {
 
   /// Starts Bluetooth discovery, or retries it; a previous error stays shown until it works or fails again.
   void startBle() {
-    // No Bluetooth or hotspot code for Windows yet: only devices on the same network show up.
-    if (Platform.isWindows) return;
+    // No Bluetooth or hotspot code for Windows or Apple yet: only devices on the same network show up.
+    if (!Platform.isLinux && !Platform.isAndroid) return;
     direct.bleStart(
       me!.fingerprint.substring(0, 16),
       me!.name,
@@ -417,7 +432,8 @@ class HomeState extends State<Home> {
           setState(() {
             t.done = t.total;
             final avg = e.secs > 0 ? e.bytes / e.secs : t.peak;
-            t.result = 'Received ${size(e.bytes)} · avg ${speed(avg)} · peak ${speed(t.peak > avg ? t.peak : avg)}';
+            t.result =
+                'Received ${size(e.bytes)} · avg ${speed(avg)} · peak ${speed(t.peak > avg ? t.peak : avg)}';
           });
           // Photos and videos show up in the Gallery.
           if (Platform.isAndroid) {
@@ -620,12 +636,14 @@ class HomeState extends State<Home> {
               title: const Text('Files'),
               onTap: () => Navigator.pop(context, false),
             ),
-            ListTile(
-              contentPadding: const EdgeInsets.symmetric(horizontal: 24),
-              leading: const Icon(Icons.folder),
-              title: const Text('Folder'),
-              onTap: () => Navigator.pop(context, true),
-            ),
+            // iOS picks files only.
+            if (!Platform.isIOS)
+              ListTile(
+                contentPadding: const EdgeInsets.symmetric(horizontal: 24),
+                leading: const Icon(Icons.folder),
+                title: const Text('Folder'),
+                onTap: () => Navigator.pop(context, true),
+              ),
             const SizedBox(height: 8),
           ],
         ),
@@ -648,9 +666,11 @@ class HomeState extends State<Home> {
     }
   }
 
-  /// Tells Android while something transfers, so it keeps the CPU and Wi-Fi at full speed.
+  /// Tells Android while something transfers, so it keeps the CPU and Wi-Fi at full speed, and
+  /// iOS, so the screen doesn't lock and suspend the app.
   void updateBusy() {
     final now = transfers.any((t) => t.result == null);
+    if (now != busy && Platform.isIOS) android.invokeMethod('busy', now);
     if (now != busy && Platform.isAndroid) {
       android.invokeMethod('busy', now);
       notify?.cancel();
@@ -951,6 +971,8 @@ class HomeState extends State<Home> {
 
   String short(String d) {
     if (Platform.isAndroid) return d.replaceFirst('/storage/emulated/0/', '');
+    // The app's Documents folder shows in the Files app as Swoop.
+    if (Platform.isIOS) return d.replaceFirst(RegExp(r'^.*?/Documents(?=/|$)'), 'Files › Swoop');
     final home = Platform.environment[Platform.isWindows ? 'USERPROFILE' : 'HOME'];
     return home != null && d.startsWith('$home${Platform.pathSeparator}')
         ? '~${d.substring(home.length)}'
@@ -1181,7 +1203,11 @@ class HomeState extends State<Home> {
                 color: receiving && listening ? c.primary : c.surfaceContainerHighest,
               ),
               child: Icon(
-                Platform.isAndroid ? Icons.phone_android : Icons.computer,
+                Platform.isAndroid
+                    ? Icons.phone_android
+                    : Platform.isIOS
+                    ? Icons.phone_iphone
+                    : Icons.computer,
                 size: 20,
                 color: receiving && listening ? c.onPrimary : c.onSurfaceVariant,
               ),
@@ -1257,12 +1283,14 @@ class HomeState extends State<Home> {
                 ),
               ),
             ),
-            ListTile(
-              contentPadding: const EdgeInsets.symmetric(horizontal: 24),
-              leading: const Icon(Icons.drive_folder_upload),
-              title: const Text('Choose another folder'),
-              onTap: () => Navigator.pop(context, true),
-            ),
+            // iOS has no folder picker; files go to Swoop's own folder.
+            if (!Platform.isIOS)
+              ListTile(
+                contentPadding: const EdgeInsets.symmetric(horizontal: 24),
+                leading: const Icon(Icons.drive_folder_upload),
+                title: const Text('Choose another folder'),
+                onTap: () => Navigator.pop(context, true),
+              ),
             ListTile(
               contentPadding: const EdgeInsets.symmetric(horizontal: 24),
               leading: const Icon(Icons.folder_open),
@@ -1318,8 +1346,12 @@ class HomeState extends State<Home> {
     if (d == dir) await writable(d);
     if (!Directory(d).existsSync()) return fail('it no longer exists.');
     try {
-      if (Platform.isAndroid) {
+      if (Platform.isAndroid || Platform.isIOS) {
         await android.invokeMethod('openDir', d);
+        return;
+      }
+      if (Platform.isMacOS) {
+        if ((await Process.run('open', [d])).exitCode != 0) fail("Finder didn't open it.");
         return;
       }
       if (Platform.isWindows) {
@@ -1518,7 +1550,7 @@ class HomeState extends State<Home> {
   Widget hint(ThemeData theme) => Padding(
     padding: const EdgeInsets.fromLTRB(4, 8, 4, 0),
     child: Text(
-      !Platform.isAndroid
+      !Platform.isAndroid && !Platform.isIOS
           ? 'Nothing sent yet. Tap a device to pick files, or drop files on this window.'
           : 'Nothing sent yet. Tap a device to pick files.',
       style: theme.textTheme.bodyMedium?.copyWith(color: theme.colorScheme.onSurfaceVariant),
@@ -1527,7 +1559,7 @@ class HomeState extends State<Home> {
 
   /// Desktop: files or folders dropped on the window wait for a device tap.
   Widget dropZone(ThemeData theme, Widget child) {
-    if (Platform.isAndroid) return child;
+    if (Platform.isAndroid || Platform.isIOS) return child;
     final c = theme.colorScheme;
     return DropTarget(
       onDragEntered: (_) => setState(() => dragging = true),
