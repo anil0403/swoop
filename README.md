@@ -28,6 +28,10 @@
 </p>
 
 <p align="center">
+  <img src="assets/screenshots/windows.png" width="100%" alt="Swoop on Windows: the same window, saving to Downloads\Swoop">
+</p>
+
+<p align="center">
   <img src="assets/screenshots/android.png" width="49%" alt="Swoop on Android: nearby devices and a transfer in progress">
   <img src="assets/screenshots/android-pairing.png" width="49%" alt="Swoop on Android: the pairing code shown when a new device sends">
 </p>
