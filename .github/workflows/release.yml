@@ -199,6 +199,48 @@ jobs:
           name: swoop-windows-x86_64
           path: dist/*
 
+  # Not signed by Apple (no developer account): the Mac app is signed ad hoc, so macOS asks once before opening it;
+  # the iPhone app is sideloaded (AltStore, Sideloadly), which signs it with the user's own Apple ID.
+  apple:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TAG }}
+      # set-version.sh is written for GNU sed.
+      - if: env.TAG != ''
+        run: |
+          brew install gnu-sed
+          PATH="$(brew --prefix gnu-sed)/libexec/gnubin:$PATH" .github/set-version.sh "$TAG"
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin, x86_64-apple-darwin, aarch64-apple-ios
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: core
+          key: apple
+      - run: echo "version=$(cat app/.flutter-version)" >> "$GITHUB_OUTPUT"
+        id: flutter
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ steps.flutter.outputs.version }}
+          cache: true
+      - name: build
+        run: |
+          for t in aarch64-apple-darwin x86_64-apple-darwin; do (cd core && cargo build --release --locked --target $t); done
+          (cd app && flutter build macos --release && flutter build ios --release --no-codesign)
+          mkdir -p mac ios/Payload dist
+          # The Mac zip: Swoop.app and the swoop command, both for Apple silicon and Intel.
+          cp -R app/build/macos/Build/Products/Release/Swoop.app LICENSE mac/
+          lipo -create -output mac/swoop core/target/{aarch64,x86_64}-apple-darwin/release/swoop
+          (cd mac && zip -qry ../dist/swoop-macos.zip Swoop.app swoop LICENSE)
+          cp -R app/build/ios/iphoneos/Runner.app ios/Payload/
+          (cd ios && zip -qry ../dist/swoop-ios.ipa Payload)
+      - uses: actions/upload-artifact@v4
+        with:
+          name: swoop-apple
+          path: dist/*
+
   # ponytail: x86_64 only; an aarch64 bundle needs an arm runner in this container.
   flatpak:
     needs: build
@@ -221,7 +263,7 @@ jobs:
           cache: false
 
   publish:
-    needs: [build, apk, windows, flatpak]
+    needs: [build, apk, windows, apple, flatpak]
     if: github.event_name == 'push' || inputs.tag != ''
     runs-on: ubuntu-latest
     environment: release
