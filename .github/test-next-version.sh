@@ -43,6 +43,11 @@ c "fix: y"
 expect manual patch v2.0.1
 c "fix: z"
 expect manual minor v2.1.0
+c "fix: v"
+c "chore: release v2.1.1"
+git tag v2.1.1
+git checkout -q HEAD~1              # the release commit, pushed by a workflow, starts no CI run
+expect nightly auto ""              # so CI last tested the commit before it, already released
 git tag v2.1.1-beta.98
 c "fix: w"
 expect push auto error              # a 99th beta has no build number

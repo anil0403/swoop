@@ -5,6 +5,14 @@ set -euo pipefail
 event=$1 bump=${2:-auto}
 
 tag() { git describe --tags --abbrev=0 --match 'v[0-9]*' "$@" 2> /dev/null || true; }
+
+# A release commit is pushed by a workflow, which starts no CI run: until the next push, the commit CI last tested
+# is the one before it, already released.
+released=$(git tag --contains HEAD --list 'v[0-9]*' --sort=v:refname | grep -v -- - | head -n1 || true)
+if [[ -n $released ]]; then
+    echo "already released in $released" >&2
+    exit 0
+fi
 last=$(tag --exclude '*-*')
 newest=$(tag)
 
