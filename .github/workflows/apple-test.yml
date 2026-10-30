@@ -1,0 +1,112 @@
+name: apple-test
+
+# Temporary: runs the macOS app and the iOS app (simulator), sends each a file, takes screenshots.
+on:
+  push:
+    branches: [apple-test]
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - run: echo "version=$(cat app/.flutter-version)" >> "$GITHUB_OUTPUT"
+        id: flutter
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ steps.flutter.outputs.version }}
+          cache: true
+      - run: (cd core && cargo build --release) && (cd app && flutter build macos --release)
+      - name: run
+        run: |
+          set -x
+          mkdir -p out
+          S=$PWD/core/target/release/swoop
+          APP=$PWD/app/build/macos/Build/Products/Release/Swoop.app
+          "$APP/Contents/MacOS/Swoop" > out/app1.log 2>&1 &
+          sleep 20
+          screencapture -x out/mac-first.png
+          cfg=$(dirname "$(find ~/Library -name cert.der -path '*swoop*' 2>/dev/null | head -1)")
+          echo "app config: $cfg"; ls -la "$cfg"
+          mkdir -p /tmp/demo/studio
+          fp=$(UFT_HOME=/tmp/demo/studio $S id)
+          afp=$(UFT_HOME=$cfg $S id)
+          pkill -f Swoop.app/Contents/MacOS/Swoop; sleep 2
+          printf '%s studio\n' "$fp" > "$cfg/trusted"
+          "$APP/Contents/MacOS/Swoop" > out/app2.log 2>&1 &
+          sleep 15
+          head -c 300000000 /dev/urandom > /tmp/big.bin
+          UFT_HOME=/tmp/demo/studio $S send "swoop://127.0.0.1:47474/$afp" /tmp/big.bin 2>&1 | tail -3
+          sleep 2
+          screencapture -x out/mac-received.png
+          ls -la ~/Downloads/Swoop
+          cmp /tmp/big.bin ~/Downloads/Swoop/big.bin && echo MAC_RECEIVE_OK
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos
+          path: out
+
+  ios:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-ios-sim
+      - run: echo "version=$(cat app/.flutter-version)" >> "$GITHUB_OUTPUT"
+        id: flutter
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ steps.flutter.outputs.version }}
+          cache: true
+      - run: (cd core && cargo build --release) && (cd app && flutter build ios --simulator --debug)
+      - name: run
+        run: |
+          set -x
+          mkdir -p out
+          S=$PWD/core/target/release/swoop
+          ID=io.github.anil0403.swoop
+          dev=$(xcrun simctl list devices available -j | jq -r '[.devices[][] | select(.name | test("^iPhone"))][0].udid')
+          xcrun simctl boot "$dev"
+          xcrun simctl bootstatus "$dev" -b
+          xcrun simctl ui "$dev" appearance dark
+          xcrun simctl install "$dev" app/build/ios/iphonesimulator/Runner.app
+          xcrun simctl launch "$dev" $ID
+          sleep 30
+          xcrun simctl io "$dev" screenshot out/ios-first.png
+          data=$(xcrun simctl get_app_container "$dev" $ID data)
+          cfg=$(dirname "$(find "$data" -name cert.der | head -1)")
+          echo "app config: $cfg"; ls -la "$cfg" "$data/Documents"
+          mkdir -p /tmp/demo/studio
+          fp=$(UFT_HOME=/tmp/demo/studio $S id)
+          afp=$(UFT_HOME=$cfg $S id)
+          xcrun simctl terminate "$dev" $ID; sleep 2
+          printf '%s studio-mac\n' "$fp" > "$cfg/trusted"
+          xcrun simctl launch "$dev" $ID
+          sleep 20
+          head -c 300000000 /dev/urandom > /tmp/big.bin
+          UFT_HOME=/tmp/demo/studio $S send "swoop://127.0.0.1:47474/$afp" /tmp/big.bin 2>&1 | tail -3
+          sleep 2
+          ls -la "$data/Documents"
+          cmp /tmp/big.bin "$data/Documents/big.bin" && echo IOS_RECEIVE_OK
+          xcrun simctl io "$dev" screenshot out/ios-received.png
+          # A swoop:// link opened (as from the camera): the device shows up in the list.
+          mkdir -p /tmp/demo/office /tmp/in
+          UFT_HOME=/tmp/demo/office $S recv --dir /tmp/in --port 47491 --yes > out/recv.log 2>&1 &
+          sleep 3
+          ofp=$(UFT_HOME=/tmp/demo/office $S id)
+          xcrun simctl openurl "$dev" "swoop://127.0.0.1:47491/$ofp"
+          sleep 8
+          xcrun simctl io "$dev" screenshot out/ios-link.png
+          xcrun simctl spawn "$dev" log show --last 3m --predicate 'process == "Runner"' --style compact > out/ios-app.log 2>&1 || true
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios
+          path: out
