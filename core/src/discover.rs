@@ -259,9 +259,12 @@ fn interfaces() -> Vec<Iface> {
 // ponytail: Ethernet > Wi-Fi > rest; ranking Wi-Fi bands (6 > 5 > 2.4 GHz) needs nl80211 link
 // info (Phase 6 diagnostics).
 // Windows names adapters "Ethernet 2", "Wi-Fi" or "WLAN"; virtual ones "vEthernet (WSL)".
+// Apple names Ethernet and Wi-Fi alike, enN.
 pub(crate) fn rank(name: &str) -> u8 {
     let sys = Path::new("/sys/class/net").join(name);
-    if sys.join("wireless").exists() || ["wl", "Wi-Fi", "WLAN"].iter().any(|p| name.starts_with(p))
+    if sys.join("wireless").exists()
+        || apple_wifi(name)
+        || ["wl", "Wi-Fi", "WLAN"].iter().any(|p| name.starts_with(p))
     {
         1
     } else if sys.join("device").exists()
@@ -273,6 +276,50 @@ pub(crate) fn rank(name: &str) -> u8 {
     } else {
         2
     }
+}
+
+/// An iPhone's or iPad's Wi-Fi is en0.
+#[cfg(target_os = "ios")]
+fn apple_wifi(name: &str) -> bool {
+    name == "en0"
+}
+
+/// A Mac's Wi-Fi is whichever enN networksetup says. Asked once: a Wi-Fi adapter plugged in later
+/// counts as Ethernet until the app restarts.
+#[cfg(target_os = "macos")]
+fn apple_wifi(name: &str) -> bool {
+    static WIFI: std::sync::OnceLock<Vec<String>> = std::sync::OnceLock::new();
+    WIFI.get_or_init(|| {
+        std::process::Command::new("networksetup")
+            .arg("-listallhardwareports")
+            .output()
+            .map(|o| wifi_ports(&String::from_utf8_lossy(&o.stdout)))
+            .unwrap_or_default()
+    })
+    .iter()
+    .any(|w| w == name)
+}
+
+#[cfg(not(any(target_os = "ios", target_os = "macos")))]
+fn apple_wifi(_: &str) -> bool {
+    false
+}
+
+/// The Wi-Fi devices in `networksetup -listallhardwareports` output.
+#[cfg(any(target_os = "macos", test))]
+fn wifi_ports(out: &str) -> Vec<String> {
+    let mut port = "";
+    let mut wifi = Vec::new();
+    for l in out.lines() {
+        if let Some(p) = l.strip_prefix("Hardware Port: ") {
+            port = p;
+        } else if let Some(d) = l.strip_prefix("Device: ")
+            && port == "Wi-Fi"
+        {
+            wifi.push(d.to_string());
+        }
+    }
+    wifi
 }
 
 fn mask(prefix: u8) -> u32 {
@@ -314,6 +361,15 @@ mod tests {
         ] {
             assert_eq!(rank(name), r, "{name}");
         }
+    }
+
+    #[test]
+    fn mac_wifi() {
+        let out = "\nHardware Port: Ethernet\nDevice: en0\nEthernet Address: 00:00:00:00:00:01\n\n\
+                   Hardware Port: Wi-Fi\nDevice: en1\nEthernet Address: 00:00:00:00:00:02\n\n\
+                   Hardware Port: Thunderbolt Bridge\nDevice: bridge0\n";
+        assert_eq!(wifi_ports(out), ["en1"]);
+        assert!(wifi_ports("").is_empty());
     }
 
     fn dev() -> Device {
